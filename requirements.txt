@@ -1,0 +1,21 @@
+# PileBackAnalysis Python 依赖包列表
+# 使用 pip install -r requirements.txt 安装所有依赖
+
+# 数值计算核心库 - 处理数组运算、多项式拟合、求导等
+numpy>=1.21.0
+
+# 数据处理库 - 用于未来扩展 Excel 导入导出功能
+pandas>=1.3.0
+
+# 科学绘图库 - 绘制位移和弯矩曲线图
+matplotlib>=3.4.0
+
+# GUI 框架 - 构建现代化桌面应用程序界面
+PyQt6>=6.2.0
+
+# Excel 文件处理 - 支持 .xlsx 文件读写（预留扩展功能）
+openpyxl>=3.0.0
+
+# Python 打包工具 - 将脚本打包为独立的可执行文件
+pyinstaller>=5.0.0
+
