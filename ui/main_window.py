@@ -37,7 +37,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("围护桩反分析工具 - PileBackAnalysis")
         self.resize(1200, 720)
 
-        # 应用科技风格主题
+        # 应用浅色科技风主题
         self._apply_theme()
 
         # 创建核心计算引擎实例
@@ -121,78 +121,66 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         # ===== 调色板设置 =====
         palette = QtGui.QPalette()
-        # 窗口背景色：深蓝黑
-        palette.setColor(QtGui.QPalette.ColorRole.Window, QtGui.QColor("#0b1224"))
-        # 控件背景色：深蓝黑
-        palette.setColor(QtGui.QPalette.ColorRole.Base, QtGui.QColor("#0b1224"))
-        # 文本颜色：浅灰白
-        palette.setColor(QtGui.QPalette.ColorRole.Text, QtGui.QColor("#e2e8f0"))
-        # 按钮背景色：深灰
-        palette.setColor(QtGui.QPalette.ColorRole.Button, QtGui.QColor("#111827"))
-        # 按钮文本色：浅灰白
-        palette.setColor(QtGui.QPalette.ColorRole.ButtonText, QtGui.QColor("#e2e8f0"))
-        # 应用调色板到窗口
+        palette.setColor(QtGui.QPalette.ColorRole.Window, QtGui.QColor("#ffffff"))
+        palette.setColor(QtGui.QPalette.ColorRole.Base, QtGui.QColor("#ffffff"))
+        palette.setColor(QtGui.QPalette.ColorRole.Text, QtGui.QColor("#0f172a"))
+        palette.setColor(QtGui.QPalette.ColorRole.Button, QtGui.QColor("#f8fafc"))
+        palette.setColor(QtGui.QPalette.ColorRole.ButtonText, QtGui.QColor("#0f172a"))
         self.setPalette(palette)
 
-        # ===== 样式表设置 =====
-        # 定义主题色：青色霓虹
-        accent = "#00e5ff"
+        accent = "#2563eb"
+        border = "#e2e8f0"
+        text_muted = "#475569"
 
-        # 设置详细的CSS样式
         self.setStyleSheet(
             f"""
-            /* 全局样式 */
             QWidget {{
-                color: #e2e8f0;                    /* 文本颜色 */
-                background-color: #0b1224;        /* 背景色 */
+                color: #0f172a;
+                background-color: #ffffff;
+                font-size: 14px;
             }}
-
-            /* 分组框样式 */
             QGroupBox {{
-                border: 1px solid #1f2937;        /* 边框色 */
-                border-radius: 6px;              /* 圆角 */
-                margin-top: 8px;                 /* 上边距 */
+                border: 1px solid {border};
+                border-radius: 6px;
+                margin-top: 8px;
             }}
             QGroupBox::title {{
-                subcontrol-origin: margin;       /* 标题位置 */
-                left: 10px;                      /* 左边距 */
-                padding: 0 4px;                  /* 内边距 */
-                color: #8b9cb8;                  /* 标题颜色 */
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 4px;
+                color: {text_muted};
             }}
-
-            /* 输入框样式 */
             QLineEdit, QTextEdit {{
-                background-color: #0f172a;       /* 输入框背景 */
-                border: 1px solid #1f2937;       /* 边框 */
-                border-radius: 4px;             /* 圆角 */
+                background-color: #ffffff;
+                border: 1px solid {border};
+                border-radius: 4px;
             }}
-
-            /* 按钮样式 */
+            QTextEdit {{
+                padding: 4px;
+            }}
             QPushButton {{
-                background-color: #111827;       /* 按钮背景 */
-                border: 1px solid #1f2937;       /* 边框 */
-                border-radius: 4px;             /* 圆角 */
-                padding: 6px 10px;              /* 内边距 */
+                background-color: #f8fafc;
+                border: 1px solid {border};
+                border-radius: 4px;
+                padding: 6px 10px;
             }}
             QPushButton:hover {{
-                border-color: {accent};         /* 悬停边框色 */
-                color: {accent};                /* 悬停文本色 */
+                border-color: {accent};
+                color: {accent};
             }}
             QPushButton:pressed {{
-                background-color: #1f2937;      /* 按下背景色 */
+                background-color: #e2e8f0;
             }}
-
-            /* 滑块样式 */
             QSlider::groove:horizontal {{
-                height: 6px;                    /* 滑轨高度 */
-                background: #1f2937;            /* 滑轨背景 */
-                border-radius: 3px;             /* 圆角 */
+                height: 6px;
+                background: #e5e7eb;
+                border-radius: 3px;
             }}
             QSlider::handle:horizontal {{
-                background: {accent};           /* 滑块颜色 */
-                width: 14px;                    /* 滑块宽度 */
-                margin: -4px 0;                 /* 垂直居中 */
-                border-radius: 7px;             /* 圆角 */
+                background: {accent};
+                width: 14px;
+                margin: -4px 0;
+                border-radius: 7px;
             }}
             """
         )
