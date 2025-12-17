@@ -266,7 +266,7 @@ class MainWindow(QtWidgets.QMainWindow):
             # ===== 步骤3: 执行计算 =====
             self.solver.set_parameters(E_val, E_unit, section_type, dims)
             self.solver.fit_data(depths, disps, degree=degree)
-            x_dense, y_fit_mm, moment = self.solver.get_results_arrays()
+            depth_dense, disp_fit_mm, moment = self.solver.get_results_arrays()
             print(f"[DEBUG] 拟合完成: coeffs={self.solver.poly_coeffs}")
 
             # ===== 步骤4: 计算统计信息 =====
@@ -276,7 +276,7 @@ class MainWindow(QtWidgets.QMainWindow):
             print(f"[DEBUG] 统计: R2={r2:.4f}, RMSE={rmse_mm:.4f}mm, Mmax={mmax:.3f}kN·m")
 
             # ===== 步骤5: 更新界面 =====
-            self.plot_canvas.plot(depths, disps, x_dense, y_fit_mm, moment)
+            self.plot_canvas.plot(depths, disps, depth_dense, disp_fit_mm, moment)
             self.stats_bar.update_stats(r2, rmse_mm, mmax)
 
         except Exception as exc:  # noqa: BLE001
