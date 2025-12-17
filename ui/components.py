@@ -29,10 +29,16 @@ class DataInputGroup(QtWidgets.QGroupBox):
 
         # 创建多行文本编辑框作为主要输入控件
         self.text_edit = QtWidgets.QTextEdit()
+        # 设置最小高度，确保 placeholder 文本完整显示
+        self.text_edit.setMinimumHeight(150)
         # 设置占位符文本，展示数据格式示例与默认数据说明
         self.text_edit.setPlaceholderText(
-            "示例(可直接粘贴Excel两列，逗号/空格/Tab均可)：\n"
-            "0.50\t-0.29\n1.00\t-0.81\n1.50\t-1.06\n2.00\t-0.98\n...\n"
+            "示例格式（可粘贴Excel两列，支持逗号/空格/Tab）：\n"
+            "0.50  -0.29\n"
+            "1.00  -0.81\n"
+            "1.50  -1.06\n"
+            "2.00  -0.98\n"
+            "...\n\n"
             "留空则自动使用默认样例数据与参数"
         )
 
@@ -241,24 +247,41 @@ class StatsBar(QtWidgets.QWidget):
         创建三个标签显示不同的统计信息。
         """
         super().__init__(parent)
+        self.setObjectName("statsBar")
 
         # R²决定系数标签
-        self.r2_label = QtWidgets.QLabel("R2: -")
+        self.r2_label = QtWidgets.QLabel("R²: -")
         # 均方根误差标签（毫米）
-        self.rmse_label = QtWidgets.QLabel("RMSE(mm): -")
+        self.rmse_label = QtWidgets.QLabel("RMSE: -")
         # 最大弯矩标签
-        self.mmax_label = QtWidgets.QLabel("Mmax(kN·m): -")
+        self.mmax_label = QtWidgets.QLabel("Mmax: -")
+        # 多项式表达式标签
+        self.poly_label = QtWidgets.QLabel("拟合函数: -")
+        # 不自动换行，让文本在一行显示，除非窗口太窄
+        self.poly_label.setWordWrap(True)
 
-        # 设置水平布局
-        layout = QtWidgets.QHBoxLayout()
-        layout.addWidget(self.r2_label)
-        layout.addWidget(self.rmse_label)
-        layout.addWidget(self.mmax_label)
-        # 添加伸缩空间将标签推到左侧
-        layout.addStretch(1)
-        self.setLayout(layout)
+        # 第一行：统计指标（水平布局）
+        first_row = QtWidgets.QHBoxLayout()
+        first_row.setSpacing(24)
+        first_row.addWidget(self.r2_label)
+        first_row.addWidget(self.rmse_label)
+        first_row.addWidget(self.mmax_label)
+        first_row.addStretch(1)  # 将标签推到左侧
 
-    def update_stats(self, r2: float, rmse_mm: float, mmax: float):
+        # 第二行：拟合函数（单独一行）
+        second_row = QtWidgets.QHBoxLayout()
+        second_row.addWidget(self.poly_label)
+        second_row.addStretch(1)
+
+        # 主布局：垂直布局，包含两行
+        main_layout = QtWidgets.QVBoxLayout()
+        main_layout.setContentsMargins(16, 12, 16, 12)
+        main_layout.setSpacing(8)
+        main_layout.addLayout(first_row)
+        main_layout.addLayout(second_row)
+        self.setLayout(main_layout)
+
+    def update_stats(self, r2: float, rmse_mm: float, mmax: float, poly_expr: str = ""):
         """
         更新统计信息显示
 
@@ -266,11 +289,17 @@ class StatsBar(QtWidgets.QWidget):
             r2 (float): 决定系数R²
             rmse_mm (float): 均方根误差（毫米）
             mmax (float): 最大弯矩值（kN·m）
+            poly_expr (str): 多项式表达式，可选
         """
         # 格式化显示R²，保留4位小数
-        self.r2_label.setText(f"R2: {r2:.4f}")
+        self.r2_label.setText(f"R² = {r2:.4f}")
         # 格式化显示RMSE，保留2位小数
-        self.rmse_label.setText(f"RMSE(mm): {rmse_mm:.2f}")
+        self.rmse_label.setText(f"RMSE = {rmse_mm:.2f} mm")
         # 格式化显示最大弯矩，保留2位小数
-        self.mmax_label.setText(f"Mmax(kN·m): {mmax:.2f}")
+        self.mmax_label.setText(f"Mmax = {mmax:.2f} kN·m")
+        # 显示多项式表达式
+        if poly_expr:
+            self.poly_label.setText(f"拟合函数: {poly_expr}")
+        else:
+            self.poly_label.setText("拟合函数: -")
 

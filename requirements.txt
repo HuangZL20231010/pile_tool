@@ -10,6 +10,9 @@ pandas
 # 科学绘图库 - 绘制位移和弯矩曲线图
 matplotlib
 
+# 交互式绘图光标 - 为图表添加悬停显示功能
+mplcursors
+
 # GUI 框架 - 构建现代化桌面应用程序界面
 PyQt6
 

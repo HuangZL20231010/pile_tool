@@ -230,3 +230,20 @@ class PileSolver:
         # 返回查询结果，位移转换为毫米
         return QueryResult(y_mm=y_m * 1000.0, curvature=curvature, moment=moment)
 
+    def get_polynomial_expression(self, precision: int = 4) -> str:
+        """
+        获取格式化的多项式表达式
+
+        Args:
+            precision: 小数精度，默认 4 位
+
+        Returns:
+            格式化的多项式表达式，如 "y = 0.5x³ - 2.3x² + 1.2x + 0.8"
+            如果未执行拟合，返回空字符串
+        """
+        if self.poly_coeffs is None:
+            return ""
+
+        from core import utils
+        return utils.format_polynomial(self.poly_coeffs, var='x', precision=precision)
+

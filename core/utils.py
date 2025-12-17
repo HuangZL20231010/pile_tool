@@ -227,3 +227,82 @@ def clamp_degree(degree: int, min_deg: int = 3, max_deg: int = 9) -> int:
     """
     return max(min_deg, min(max_deg, int(degree)))
 
+
+def format_polynomial(coeffs: Iterable[float], var: str = 'x', precision: int = 4) -> str:
+    """
+    将多项式系数数组格式化为可读的数学表达式
+
+    Args:
+        coeffs: 从高次到低次的系数数组 [an, an-1, ..., a1, a0]
+        var: 变量名，默认 'x'
+        precision: 小数精度，默认 4 位
+
+    Returns:
+        格式化的表达式字符串，如 "y = 0.5x³ - 2.3x² + 1.2x + 0.8"
+
+    Example:
+        >>> format_polynomial([0.5, -2.3, 1.2, 0.8])
+        'y = 0.5x³ - 2.3x² + 1.2x + 0.8'
+    """
+    coeffs_list = list(coeffs)
+    degree = len(coeffs_list) - 1
+    terms = []
+
+    # Unicode 上标字符映射（用于指数）
+    superscript_map = str.maketrans("0123456789-", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻")
+
+    for i, coeff in enumerate(coeffs_list):
+        power = degree - i
+
+        # 跳过系数接近 0 的项
+        if abs(coeff) < 1e-10:
+            continue
+
+        # 判断是否使用科学计数法（系数很小或很大时）
+        abs_coeff = abs(coeff)
+        if abs_coeff < 0.01 or abs_coeff > 1000:
+            # 使用科学计数法
+            exp = int(f"{abs_coeff:.0e}".split('e')[1])
+            mantissa = abs_coeff / (10 ** exp)
+
+            # 格式化尾数部分
+            mantissa_str = f"{mantissa:.{precision}f}".rstrip('0').rstrip('.')
+            # 格式化指数部分（使用上标）
+            exp_str = str(exp).translate(superscript_map)
+            coeff_str = f"{mantissa_str}×10{exp_str}"
+        else:
+            # 使用普通格式
+            coeff_str = f"{abs_coeff:.{precision}f}".rstrip('0').rstrip('.')
+
+        # 构建项表达式
+        if power == 0:
+            # 常数项
+            term = coeff_str
+        elif power == 1:
+            # 一次项
+            if abs_coeff == 1.0:
+                term = var
+            else:
+                term = f"{coeff_str}{var}"
+        else:
+            # 高次项，使用上标
+            exponent = str(power).translate(superscript_map)
+            if abs_coeff == 1.0:
+                term = f"{var}{exponent}"
+            else:
+                term = f"{coeff_str}{var}{exponent}"
+
+        # 添加符号
+        if coeff < 0:
+            terms.append(f"- {term}")
+        else:
+            terms.append(f"+ {term}" if terms else term)
+
+    # 如果所有系数都接近 0
+    if not terms:
+        return "y = 0"
+
+    # 连接所有项
+    result = " ".join(terms)
+    return f"y = {result}"
+

@@ -66,6 +66,9 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         # ===== 左侧控制面板 =====
         left_panel = QtWidgets.QVBoxLayout()
+        left_panel.setSpacing(16)  # 增加组件之间的间距
+        left_panel.setContentsMargins(16, 16, 16, 16)  # 添加内边距
+
         # 依次添加各个控制组件
         left_panel.addWidget(self.data_group)   # 数据输入
         left_panel.addWidget(self.params_group) # 参数设置
@@ -78,10 +81,14 @@ class MainWindow(QtWidgets.QMainWindow):
         left_widget = QtWidgets.QWidget()
         left_widget.setLayout(left_panel)
         # 设置固定宽度，确保布局稳定
-        left_widget.setFixedWidth(360)
+        left_widget.setFixedWidth(400)
+        # 设置左侧面板背景色，与右侧区分
+        left_widget.setObjectName("leftPanel")
 
         # ===== 右侧绘图面板 =====
         right_panel = QtWidgets.QVBoxLayout()
+        right_panel.setSpacing(12)  # 增加间距
+        right_panel.setContentsMargins(16, 16, 16, 16)  # 添加内边距
         right_panel.addWidget(self.plot_canvas)  # 绘图画布（占用大部分空间）
         right_panel.addWidget(self.stats_bar)    # 统计信息栏（底部）
 
@@ -91,6 +98,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # ===== 主布局 =====
         main_layout = QtWidgets.QHBoxLayout()
+        main_layout.setSpacing(0)  # 取消间距，让左右面板紧贴
+        main_layout.setContentsMargins(0, 0, 0, 0)  # 取消边距
         main_layout.addWidget(left_widget)           # 左侧面板
         main_layout.addWidget(right_widget, stretch=1)  # 右侧面板，可伸缩
 
@@ -112,75 +121,234 @@ class MainWindow(QtWidgets.QMainWindow):
         # 连接查询按钮的点击信号到查询处理函数
         self.query_group.query_clicked.connect(self.on_query_clicked)
 
+    def keyPressEvent(self, event):
+        """
+        处理键盘按键事件
+
+        Args:
+            event: QKeyEvent 键盘事件对象
+        """
+        # 检测ESC键
+        if event.key() == QtCore.Qt.Key.Key_Escape:
+            # 关闭窗口，退出程序
+            self.close()
+        else:
+            # 其他按键交给父类处理
+            super().keyPressEvent(event)
+
     def _apply_theme(self):
         """
-        应用科技风格主题
+        应用现代卡片式设计主题
 
-        设置深色背景、霓虹色点缀的现代化UI风格。
+        设置现代化的卡片风格UI，包括阴影、圆角和精致的间距。
         包括调色板和样式表两部分设置。
         """
         # ===== 调色板设置 =====
         palette = QtGui.QPalette()
-        palette.setColor(QtGui.QPalette.ColorRole.Window, QtGui.QColor("#ffffff"))
+        palette.setColor(QtGui.QPalette.ColorRole.Window, QtGui.QColor("#f8fafc"))
         palette.setColor(QtGui.QPalette.ColorRole.Base, QtGui.QColor("#ffffff"))
         palette.setColor(QtGui.QPalette.ColorRole.Text, QtGui.QColor("#0f172a"))
-        palette.setColor(QtGui.QPalette.ColorRole.Button, QtGui.QColor("#f8fafc"))
-        palette.setColor(QtGui.QPalette.ColorRole.ButtonText, QtGui.QColor("#0f172a"))
+        palette.setColor(QtGui.QPalette.ColorRole.Button, QtGui.QColor("#2563eb"))
+        palette.setColor(QtGui.QPalette.ColorRole.ButtonText, QtGui.QColor("#ffffff"))
         self.setPalette(palette)
 
-        accent = "#2563eb"
-        border = "#e2e8f0"
-        text_muted = "#475569"
+        # 配色方案
+        accent = "#2563eb"          # 主题蓝色
+        accent_hover = "#1d4ed8"    # 深蓝色（hover）
+        accent_light = "#dbeafe"    # 浅蓝色背景
+        border = "#e2e8f0"          # 边框颜色
+        border_light = "#f1f5f9"    # 浅边框
+        text_primary = "#0f172a"    # 主文本
+        text_muted = "#64748b"      # 次要文本
+        bg_card = "#ffffff"         # 卡片背景
+        bg_panel = "#f8fafc"        # 面板背景
 
         self.setStyleSheet(
             f"""
+            /* 全局样式 */
             QWidget {{
-                color: #0f172a;
-                background-color: #ffffff;
+                color: {text_primary};
+                background-color: {bg_panel};
                 font-size: 14px;
+                font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
             }}
+
+            /* 左侧面板背景 */
+            #leftPanel {{
+                background-color: {bg_panel};
+                border-right: 1px solid {border_light};
+            }}
+
+            /* 卡片样式的GroupBox */
             QGroupBox {{
+                background-color: {bg_card};
                 border: 1px solid {border};
-                border-radius: 6px;
-                margin-top: 8px;
+                border-radius: 12px;
+                margin-top: 16px;
+                padding: 20px 16px 16px 16px;
+                font-weight: 500;
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 4px;
-                color: {text_muted};
+                subcontrol-position: top left;
+                left: 16px;
+                top: 8px;
+                padding: 0 8px;
+                color: {text_primary};
+                font-size: 15px;
+                font-weight: 600;
+                background-color: {bg_card};
             }}
-            QLineEdit, QTextEdit {{
+
+            /* 输入框样式 */
+            QLineEdit {{
+                background-color: {bg_panel};
+                border: 2px solid {border};
+                border-radius: 8px;
+                padding: 8px 12px;
+                font-size: 14px;
+                color: {text_primary};
+            }}
+            QLineEdit:focus {{
+                border-color: {accent};
                 background-color: #ffffff;
-                border: 1px solid {border};
-                border-radius: 4px;
             }}
+            QLineEdit:hover {{
+                border-color: {accent_light};
+            }}
+
+            /* 文本编辑框样式 */
             QTextEdit {{
-                padding: 4px;
+                background-color: {bg_panel};
+                border: 2px solid {border};
+                border-radius: 8px;
+                padding: 12px;
+                font-size: 13px;
+                line-height: 1.5;
+                color: {text_primary};
             }}
+            QTextEdit:focus {{
+                border-color: {accent};
+                background-color: #ffffff;
+            }}
+
+            /* 主要按钮样式 */
             QPushButton {{
-                background-color: #f8fafc;
-                border: 1px solid {border};
-                border-radius: 4px;
-                padding: 6px 10px;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                           stop:0 {accent}, stop:1 {accent_hover});
+                color: #ffffff;
+                border: none;
+                border-radius: 8px;
+                padding: 10px 20px;
+                font-size: 14px;
+                font-weight: 600;
+                min-height: 20px;
             }}
             QPushButton:hover {{
-                border-color: {accent};
-                color: {accent};
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                           stop:0 {accent_hover}, stop:1 #1e40af);
             }}
             QPushButton:pressed {{
-                background-color: #e2e8f0;
+                background: #1e3a8a;
+                padding-top: 11px;
+                padding-bottom: 9px;
             }}
+            QPushButton:disabled {{
+                background: #cbd5e1;
+                color: #94a3b8;
+            }}
+
+            /* 下拉框样式 */
+            QComboBox {{
+                background-color: {bg_panel};
+                border: 2px solid {border};
+                border-radius: 8px;
+                padding: 8px 12px;
+                min-width: 80px;
+            }}
+            QComboBox:hover {{
+                border-color: {accent_light};
+            }}
+            QComboBox:focus {{
+                border-color: {accent};
+            }}
+            QComboBox::drop-down {{
+                border: none;
+                width: 30px;
+            }}
+            QComboBox::down-arrow {{
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 6px solid {text_muted};
+                margin-right: 8px;
+            }}
+
+            /* 单选按钮样式 */
+            QRadioButton {{
+                spacing: 8px;
+                color: {text_primary};
+                font-size: 14px;
+            }}
+            QRadioButton::indicator {{
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                border: 2px solid {border};
+                background-color: #ffffff;
+            }}
+            QRadioButton::indicator:hover {{
+                border-color: {accent_light};
+            }}
+            QRadioButton::indicator:checked {{
+                border-color: {accent};
+                background-color: {accent};
+                border: 5px solid {accent};
+            }}
+
+            /* 滑块样式 */
             QSlider::groove:horizontal {{
-                height: 6px;
-                background: #e5e7eb;
-                border-radius: 3px;
+                height: 8px;
+                background: {border_light};
+                border-radius: 4px;
             }}
             QSlider::handle:horizontal {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                           stop:0 {accent}, stop:1 {accent_hover});
+                width: 20px;
+                height: 20px;
+                margin: -6px 0;
+                border-radius: 10px;
+                border: 2px solid #ffffff;
+            }}
+            QSlider::handle:horizontal:hover {{
+                background: {accent_hover};
+                width: 22px;
+                height: 22px;
+                margin: -7px 0;
+            }}
+            QSlider::sub-page:horizontal {{
                 background: {accent};
-                width: 14px;
-                margin: -4px 0;
-                border-radius: 7px;
+                border-radius: 4px;
+            }}
+
+            /* 标签样式 */
+            QLabel {{
+                color: {text_primary};
+                background: transparent;
+                padding: 2px;
+            }}
+
+            /* 统计栏样式 */
+            #statsBar {{
+                background-color: {bg_card};
+                border: 1px solid {border};
+                border-radius: 12px;
+            }}
+            #statsBar QLabel {{
+                font-size: 14px;
+                font-weight: 500;
+                color: {text_primary};
             }}
             """
         )
@@ -204,6 +372,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self.params_group.E_unit.setCurrentText("MPa")
         self.params_group.circle_radio.setChecked(True)
         self.params_group.D_input.setText("800")
+
+    def _fill_default_data_to_textbox(self, depths, disps):
+        """
+        将默认数据填充到文本框
+
+        Args:
+            depths: 深度列表
+            disps: 位移列表
+        """
+        # 构建文本内容，每行格式：深度\t位移
+        lines = [f"{d:.2f}\t{disp:.2f}" for d, disp in zip(depths, disps)]
+        text = "\n".join(lines)
+        self.data_group.text_edit.setPlainText(text)
 
     def _read_section_dims(self, section_type: str):
         """
@@ -247,6 +428,8 @@ class MainWindow(QtWidgets.QMainWindow):
             if not raw_text:
                 depths, disps = self._get_default_data()
                 self._set_default_params()
+                # 将默认数据填充到文本框
+                self._fill_default_data_to_textbox(depths, disps)
                 print("[DEBUG] 使用默认数据与参数")
             else:
                 depths, disps = utils.parse_depth_disp(raw_text)
@@ -264,6 +447,8 @@ class MainWindow(QtWidgets.QMainWindow):
             print(f"[DEBUG] 参数: E={E_val}{E_unit}, section={section_type}, dims={dims}, degree={degree}")
 
             # ===== 步骤3: 执行计算 =====
+            # 连接 solver 到绘图画布，用于交互式十字线跟踪
+            self.plot_canvas.set_solver(self.solver)
             self.solver.set_parameters(E_val, E_unit, section_type, dims)
             self.solver.fit_data(depths, disps, degree=degree)
             depth_dense, disp_fit_mm, moment = self.solver.get_results_arrays()
@@ -276,8 +461,11 @@ class MainWindow(QtWidgets.QMainWindow):
             print(f"[DEBUG] 统计: R2={r2:.4f}, RMSE={rmse_mm:.4f}mm, Mmax={mmax:.3f}kN·m")
 
             # ===== 步骤5: 更新界面 =====
+            # 获取多项式表达式
+            poly_expr = self.solver.get_polynomial_expression()
+            # 更新图表和统计信息
             self.plot_canvas.plot(depths, disps, depth_dense, disp_fit_mm, moment)
-            self.stats_bar.update_stats(r2, rmse_mm, mmax)
+            self.stats_bar.update_stats(r2, rmse_mm, mmax, poly_expr)
 
         except Exception as exc:  # noqa: BLE001
             import traceback

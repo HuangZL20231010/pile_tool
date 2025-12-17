@@ -1,0 +1,85 @@
+# ============================================
+# Python 围护桩反分析工具 - Git 忽略配置
+# ============================================
+
+# ===== Python 相关 =====
+# 字节码文件
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+
+# 虚拟环境
+venv/
+env/
+ENV/
+.venv/
+
+# Python 发行版相关
+*.egg-info/
+dist-packages/
+build-lib/
+
+# ===== PyInstaller 打包相关 =====
+# 构建目录
+build/
+dist/
+
+# PyInstaller 配置文件
+*.spec
+
+# ===== IDE 和编辑器 =====
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# Cursor IDE
+.cursor/
+
+# PyCharm
+.idea/
+*.iml
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# ===== 操作系统相关 =====
+# Windows
+Thumbs.db
+Desktop.ini
+*.lnk
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+.directory
+
+# ===== 测试和覆盖率 =====
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# ===== 日志和临时文件 =====
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+# ===== 数据文件（可选） =====
+# 如果不想提交用户数据文件，取消注释以下行
+# *.csv
+# *.xlsx
+# *.xls
+# data/
+
+# ===== Claude Code =====
+.claude/
