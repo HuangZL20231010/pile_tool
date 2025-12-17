@@ -497,7 +497,7 @@ class WelcomePlaceholder(QtWidgets.QWidget):
         title_label = QtWidgets.QLabel("围护桩反分析工具")
         title_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         title_label.setStyleSheet(
-            "font-size: 28px; font-weight: 700; color: #0f172a; "
+            "font-size: 40px; font-weight: 700; color: #0f172a; "
             "margin-bottom: 16px;"
         )
 
@@ -539,7 +539,7 @@ class WelcomePlaceholder(QtWidgets.QWidget):
         content_layout.addWidget(step1)
         content_layout.addWidget(step2)
         content_layout.addWidget(step3)
-        content_layout.addWidget(hint_label)
+        # content_layout.addWidget(hint_label)
 
         # 主布局（使内容垂直居中）
         main_layout = QtWidgets.QVBoxLayout(self)
