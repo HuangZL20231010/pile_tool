@@ -51,6 +51,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stats_bar = StatsBar()             # 统计信息栏
         self.plot_canvas = PlotCanvas()         # 绘图画布
 
+        # 初始状态下禁用查询按钮（需要先计算才能查询）
+        self.query_group.query_btn.setEnabled(False)
+
         # 构建窗口布局
         self._build_layout()
         # 连接信号和槽函数
@@ -523,6 +526,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
             # 切换到结果页面
             self.right_stack.setCurrentIndex(1)
+
+            # 启用查询按钮
+            self.query_group.query_btn.setEnabled(True)
 
         except Exception as exc:  # noqa: BLE001
             import traceback
