@@ -7,7 +7,11 @@
 
 from __future__ import annotations
 
+from typing import List
 from PyQt6 import QtCore, QtWidgets
+from PyQt6.QtWidgets import QFileDialog, QMessageBox
+
+from core import file_importer
 
 
 class DataInputGroup(QtWidgets.QGroupBox):
@@ -42,10 +46,89 @@ class DataInputGroup(QtWidgets.QGroupBox):
             "留空则自动使用默认样例数据与参数"
         )
 
+        # 创建导入按钮
+        self.import_button = QtWidgets.QPushButton("从文件中读取（支持.csv和.xlsx）")
+        self.import_button.clicked.connect(self.on_import_button_clicked)
+
+        # 创建按钮行布局（水平布局）
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addWidget(self.import_button)
+        button_layout.addStretch(1)  # 添加弹性空间，将按钮推到左侧
+
         # 设置垂直布局
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.text_edit)
+        layout.addLayout(button_layout)
         self.setLayout(layout)
+
+    def on_import_button_clicked(self):
+        """
+        处理导入按钮点击事件
+
+        打开文件选择对话框，允许用户选择CSV或Excel文件。
+        读取文件内容并将其格式化后填充到文本编辑框中。
+        如果读取过程中出现错误，显示错误消息对话框。
+        """
+        # 打开文件选择对话框
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择数据文件",
+            "",
+            "数据文件 (*.csv *.xlsx);;CSV文件 (*.csv);;Excel文件 (*.xlsx);;所有文件 (*.*)"
+        )
+
+        # 如果用户取消选择，直接返回
+        if not file_path:
+            return
+
+        try:
+            # 从文件加载数据
+            depths, disps = file_importer.load_data_from_file(file_path)
+
+            # 格式化数据为文本
+            formatted_text = self._format_data_to_text(depths, disps)
+
+            # 填充到文本编辑框
+            self.text_edit.setPlainText(formatted_text)
+
+            # 显示成功消息（可选）
+            QMessageBox.information(
+                self,
+                "导入成功",
+                f"成功导入 {len(depths)} 组数据"
+            )
+
+        except FileNotFoundError:
+            QMessageBox.warning(self, "错误", "文件未找到")
+        except ValueError as e:
+            QMessageBox.warning(self, "错误", f"数据格式错误: {str(e)}")
+        except PermissionError:
+            QMessageBox.warning(self, "错误", "无法访问文件（权限不足或文件被占用）")
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"导入失败: {str(e)}")
+
+    def _format_data_to_text(self, depths: List[float], disps: List[float]) -> str:
+        """
+        将深度和位移数据格式化为文本
+
+        将数据列表格式化为制表符分隔的文本格式，
+        与现有的 parse_depth_disp() 函数兼容。
+
+        Args:
+            depths (List[float]): 深度列表（米）
+            disps (List[float]): 位移列表（毫米）
+
+        Returns:
+            str: 格式化后的文本，每行格式为 "深度\t位移\n"
+
+        Note:
+            - 使用制表符作为分隔符，与 Excel 复制粘贴格式一致
+            - 返回的文本可直接填充到 QTextEdit 中
+        """
+        lines = []
+        for depth, disp in zip(depths, disps):
+            lines.append(f"{depth}\t{disp}")
+        return "\n".join(lines)
 
 
 class ParamsGroup(QtWidgets.QGroupBox):
