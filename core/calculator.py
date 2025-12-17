@@ -247,3 +247,41 @@ class PileSolver:
         from core import utils
         return utils.format_polynomial(self.poly_coeffs, var='x', precision=precision)
 
+    def get_moment_expression(self, precision: int = 3) -> str:
+        """
+        获取格式化的弯矩函数表达式
+
+        弯矩计算公式：M(x) = E * I * y''(x)
+        其中 y''(x) 是位移函数的二阶导数
+
+        Args:
+            precision: 小数精度，默认 3 位
+
+        Returns:
+            格式化的弯矩表达式，如 "M(x) = 2.5x² - 3.2x + 1.1"
+            如果未执行拟合或参数未设置，返回空字符串
+
+        Note:
+            - 弯矩单位为 kN·m
+            - 表达式已包含 E*I 的缩放系数
+        """
+        if self.poly_second is None or self.E_kpa is None or self.I_m4 is None:
+            return ""
+
+        # 获取二阶导数的系数（y''的多项式系数）
+        second_deriv_coeffs = self.poly_second.coefficients
+
+        # 将二阶导数系数乘以 E*I，得到弯矩函数的系数
+        # E_kpa 单位是 kPa，I_m4 单位是 m⁴，结果单位是 kN·m
+        moment_coeffs = second_deriv_coeffs * self.E_kpa * self.I_m4
+
+        from core import utils
+        # 格式化弯矩表达式
+        moment_expr = utils.format_polynomial(moment_coeffs, var='x', precision=precision)
+
+        # 将 "y =" 替换为 "M(x) ="
+        if moment_expr.startswith("y = "):
+            return "M(x) = " + moment_expr[4:]
+
+        return moment_expr
+

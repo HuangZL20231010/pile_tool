@@ -319,52 +319,131 @@ class StatsBar(QtWidgets.QWidget):
     """
     统计信息显示栏
 
-    显示拟合统计信息：R²值、RMSE、最大弯矩。
-    用于实时反馈计算结果的质量。
+    使用现代卡片式设计显示拟合统计信息和函数表达式。
+    包括拟合质量指标、弯矩信息、位移函数和弯矩函数。
     """
 
     def __init__(self, parent=None):
         """
         初始化统计栏
 
-        创建三个标签显示不同的统计信息。
+        创建美观的卡片式布局，分区显示不同类型的统计信息。
         """
         super().__init__(parent)
         self.setObjectName("statsBar")
 
-        # R²决定系数标签
-        self.r2_label = QtWidgets.QLabel("R²: -")
-        # 均方根误差标签（毫米）
-        self.rmse_label = QtWidgets.QLabel("RMSE: -")
-        # 最大弯矩标签
-        self.mmax_label = QtWidgets.QLabel("Mmax: -")
-        # 多项式表达式标签
-        self.poly_label = QtWidgets.QLabel("拟合函数: -")
-        # 不自动换行，让文本在一行显示，除非窗口太窄
+        # ========== 创建统计指标卡片 ==========
+        # 拟合质量组
+        quality_title = QtWidgets.QLabel("拟合质量")
+        quality_title.setStyleSheet("font-weight: 600; font-size: 13px; color: #64748b;")
+
+        self.r2_label = QtWidgets.QLabel("R² = -")
+        self.r2_label.setStyleSheet("font-size: 16px; font-weight: 600; color: #0f172a;")
+
+        self.rmse_label = QtWidgets.QLabel("RMSE = -")
+        self.rmse_label.setStyleSheet("font-size: 16px; font-weight: 600; color: #0f172a;")
+
+        quality_layout = QtWidgets.QHBoxLayout()
+        quality_layout.setSpacing(32)
+        quality_layout.addWidget(self.r2_label)
+        quality_layout.addWidget(self.rmse_label)
+        quality_layout.addStretch()
+
+        quality_card = QtWidgets.QVBoxLayout()
+        quality_card.setSpacing(8)
+        quality_card.addWidget(quality_title)
+        quality_card.addLayout(quality_layout)
+
+        # 弯矩信息组
+        moment_title = QtWidgets.QLabel("弯矩信息")
+        moment_title.setStyleSheet("font-weight: 600; font-size: 13px; color: #64748b;")
+
+        self.mmax_label = QtWidgets.QLabel("Mmax = -")
+        self.mmax_label.setStyleSheet("font-size: 16px; font-weight: 600; color: #0f172a;")
+
+        moment_card = QtWidgets.QVBoxLayout()
+        moment_card.setSpacing(8)
+        moment_card.addWidget(moment_title)
+        moment_card.addWidget(self.mmax_label)
+
+        # 第一行：质量指标和弯矩信息
+        top_row = QtWidgets.QHBoxLayout()
+        top_row.setSpacing(48)
+        top_row.addLayout(quality_card, 1)
+        top_row.addLayout(moment_card, 1)
+        top_row.addStretch(2)
+
+        # ========== 创建函数表达式卡片 ==========
+        # 位移拟合函数
+        disp_title = QtWidgets.QLabel("位移拟合函数 y(x)")
+        disp_title.setStyleSheet(
+            "font-weight: 600; font-size: 13px; color: #64748b; margin-top: 4px;"
+        )
+
+        self.poly_label = QtWidgets.QLabel("-")
         self.poly_label.setWordWrap(True)
+        self.poly_label.setStyleSheet(
+            "font-size: 14px; color: #1e293b; padding: 8px 12px; "
+            "background-color: #fef3c7; border-radius: 6px; "
+            "font-family: 'Consolas', 'Courier New', monospace;"
+        )
 
-        # 第一行：统计指标（水平布局）
-        first_row = QtWidgets.QHBoxLayout()
-        first_row.setSpacing(24)
-        first_row.addWidget(self.r2_label)
-        first_row.addWidget(self.rmse_label)
-        first_row.addWidget(self.mmax_label)
-        first_row.addStretch(1)  # 将标签推到左侧
+        disp_func_layout = QtWidgets.QVBoxLayout()
+        disp_func_layout.setSpacing(6)
+        disp_func_layout.addWidget(disp_title)
+        disp_func_layout.addWidget(self.poly_label)
 
-        # 第二行：拟合函数（单独一行）
-        second_row = QtWidgets.QHBoxLayout()
-        second_row.addWidget(self.poly_label)
-        second_row.addStretch(1)
+        # 弯矩函数
+        moment_func_title = QtWidgets.QLabel("弯矩函数 M(x) = E·I·y''(x)")
+        moment_func_title.setStyleSheet(
+            "font-weight: 600; font-size: 13px; color: #64748b; margin-top: 4px;"
+        )
 
-        # 主布局：垂直布局，包含两行
+        self.moment_expr_label = QtWidgets.QLabel("-")
+        self.moment_expr_label.setWordWrap(True)
+        self.moment_expr_label.setStyleSheet(
+            "font-size: 14px; color: #1e293b; padding: 8px 12px; "
+            "background-color: #fef3c7; border-radius: 6px; "
+            "font-family: 'Consolas', 'Courier New', monospace;"
+        )
+
+        moment_func_layout = QtWidgets.QVBoxLayout()
+        moment_func_layout.setSpacing(6)
+        moment_func_layout.addWidget(moment_func_title)
+        moment_func_layout.addWidget(self.moment_expr_label)
+
+        # 函数表达式行
+        func_row = QtWidgets.QHBoxLayout()
+        func_row.setSpacing(24)
+        func_row.addLayout(disp_func_layout, 1)
+        func_row.addLayout(moment_func_layout, 1)
+
+        # ========== 主布局 ==========
         main_layout = QtWidgets.QVBoxLayout()
-        main_layout.setContentsMargins(16, 12, 16, 12)
-        main_layout.setSpacing(8)
-        main_layout.addLayout(first_row)
-        main_layout.addLayout(second_row)
+        main_layout.setContentsMargins(20, 16, 20, 16)
+        main_layout.setSpacing(16)
+        main_layout.addLayout(top_row)
+        main_layout.addLayout(func_row)
         self.setLayout(main_layout)
 
-    def update_stats(self, r2: float, rmse_mm: float, mmax: float, poly_expr: str = ""):
+        # 设置整体卡片样式
+        self.setStyleSheet(
+            """
+            StatsBar {
+                background-color: #ffffff;
+                border-top: 2px solid #e2e8f0;
+            }
+            """
+        )
+
+    def update_stats(
+        self,
+        r2: float,
+        rmse_mm: float,
+        mmax: float,
+        poly_expr: str = "",
+        moment_expr: str = "",
+    ):
         """
         更新统计信息显示
 
@@ -372,17 +451,27 @@ class StatsBar(QtWidgets.QWidget):
             r2 (float): 决定系数R²
             rmse_mm (float): 均方根误差（毫米）
             mmax (float): 最大弯矩值（kN·m）
-            poly_expr (str): 多项式表达式，可选
+            poly_expr (str): 位移拟合函数表达式，可选
+            moment_expr (str): 弯矩函数表达式，可选
         """
-        # 格式化显示R²，保留4位小数
+        # 更新拟合质量指标
         self.r2_label.setText(f"R² = {r2:.4f}")
-        # 格式化显示RMSE，保留2位小数
+
+        # RMSE添加单位标注
         self.rmse_label.setText(f"RMSE = {rmse_mm:.2f} mm")
-        # 格式化显示最大弯矩，保留2位小数
+
+        # 更新最大弯矩，使用醒目的红色
         self.mmax_label.setText(f"Mmax = {mmax:.2f} kN·m")
-        # 显示多项式表达式
+
+        # 更新位移拟合函数表达式
         if poly_expr:
-            self.poly_label.setText(f"拟合函数: {poly_expr}")
+            self.poly_label.setText(poly_expr)
         else:
-            self.poly_label.setText("拟合函数: -")
+            self.poly_label.setText("-")
+
+        # 更新弯矩函数表达式
+        if moment_expr:
+            self.moment_expr_label.setText(moment_expr)
+        else:
+            self.moment_expr_label.setText("-")
 

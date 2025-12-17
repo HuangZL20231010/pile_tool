@@ -463,9 +463,11 @@ class MainWindow(QtWidgets.QMainWindow):
             # ===== 步骤5: 更新界面 =====
             # 获取多项式表达式
             poly_expr = self.solver.get_polynomial_expression()
+            # 获取弯矩函数表达式
+            moment_expr = self.solver.get_moment_expression()
             # 更新图表和统计信息
             self.plot_canvas.plot(depths, disps, depth_dense, disp_fit_mm, moment)
-            self.stats_bar.update_stats(r2, rmse_mm, mmax, poly_expr)
+            self.stats_bar.update_stats(r2, rmse_mm, mmax, poly_expr, moment_expr)
 
         except Exception as exc:  # noqa: BLE001
             import traceback
