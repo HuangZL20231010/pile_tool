@@ -11,7 +11,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 
 from core.calculator import PileSolver
 from core import utils
-from .components import DataInputGroup, FitControlGroup, ParamsGroup, QueryGroup, StatsBar
+from .components import DataInputGroup, FitControlGroup, ParamsGroup, QueryGroup, StatsBar, WelcomePlaceholder
 from .plotting import PlotCanvas
 
 
@@ -86,14 +86,44 @@ class MainWindow(QtWidgets.QMainWindow):
         left_widget.setObjectName("leftPanel")
 
         # ===== 右侧绘图面板 =====
-        right_panel = QtWidgets.QVBoxLayout()
-        right_panel.setSpacing(12)  # 增加间距
-        right_panel.setContentsMargins(16, 16, 16, 16)  # 添加内边距
-        right_panel.addWidget(self.plot_canvas)  # 绘图画布（占用大部分空间）
-        right_panel.addWidget(self.stats_bar)    # 统计信息栏（底部）
+        # 创建堆叠窗口，用于切换欢迎页和结果页
+        self.right_stack = QtWidgets.QStackedWidget()
+        self.right_stack.setObjectName("rightStack")
+
+        # Page 0: 欢迎占位页面（计算前显示）
+        self.welcome_page = WelcomePlaceholder()
+        self.right_stack.addWidget(self.welcome_page)
+
+        # Page 1: 结果页面（计算后显示）
+        results_widget = QtWidgets.QWidget()
+        results_widget.setObjectName("resultsPage")
+        results_layout = QtWidgets.QVBoxLayout(results_widget)
+        results_layout.setSpacing(16)
+        results_layout.setContentsMargins(16, 16, 16, 16)
+
+        # 图表容器（带卡片样式）
+        plot_container = QtWidgets.QWidget()
+        plot_container.setObjectName("plotContainer")
+        plot_container_layout = QtWidgets.QVBoxLayout(plot_container)
+        plot_container_layout.setContentsMargins(0, 0, 0, 0)
+        plot_container_layout.addWidget(self.plot_canvas)
+
+        results_layout.addWidget(plot_container, stretch=1)  # 绘图画布（占用大部分空间）
+        results_layout.addWidget(self.stats_bar)  # 统计信息栏（底部）
+
+        self.right_stack.addWidget(results_widget)
+
+        # 默认显示欢迎页面
+        self.right_stack.setCurrentIndex(0)
 
         # 创建右侧面板容器控件
+        right_panel = QtWidgets.QVBoxLayout()
+        right_panel.setSpacing(0)
+        right_panel.setContentsMargins(0, 0, 0, 0)
+        right_panel.addWidget(self.right_stack)
+
         right_widget = QtWidgets.QWidget()
+        right_widget.setObjectName("rightPanel")
         right_widget.setLayout(right_panel)
 
         # ===== 主布局 =====
@@ -177,6 +207,28 @@ class MainWindow(QtWidgets.QMainWindow):
             #leftPanel {{
                 background-color: {bg_panel};
                 border-right: 1px solid {border_light};
+            }}
+
+            /* 右侧面板背景 */
+            #rightPanel {{
+                background-color: {bg_panel};
+            }}
+
+            /* 右侧堆叠容器 */
+            #rightStack {{
+                background-color: {bg_panel};
+            }}
+
+            /* 结果页面 */
+            #resultsPage {{
+                background-color: {bg_panel};
+            }}
+
+            /* 图表容器卡片样式 */
+            #plotContainer {{
+                background-color: {bg_card};
+                border: 1px solid {border};
+                border-radius: 12px;
             }}
 
             /* 卡片样式的GroupBox */
@@ -468,6 +520,9 @@ class MainWindow(QtWidgets.QMainWindow):
             # 更新图表和统计信息
             self.plot_canvas.plot(depths, disps, depth_dense, disp_fit_mm, moment)
             self.stats_bar.update_stats(r2, rmse_mm, mmax, poly_expr, moment_expr)
+
+            # 切换到结果页面
+            self.right_stack.setCurrentIndex(1)
 
         except Exception as exc:  # noqa: BLE001
             import traceback

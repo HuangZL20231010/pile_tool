@@ -16,11 +16,12 @@ pyinstaller --clean --noconsole --onefile ^
     --hidden-import=PyQt6.QtWidgets ^
     --collect-data matplotlib ^
     --exclude-module tkinter ^
-    --exclude-module PIL ^
     --exclude-module IPython ^
     --exclude-module jupyter ^
     --exclude-module notebook ^
     --exclude-module scipy ^
+    --exclude-module pytest ^
+    --exclude-module setuptools ^
     main.py
 
 echo [3/5] Checking build result...
