@@ -464,3 +464,154 @@ class PileSolver:
 
         return moment_expr
 
+    def find_optimal_sigma(self, x_depths, y_disps_mm,
+                           algo_type: str = "spline",
+                           sigma_range: tuple = (0.001, 1.0),
+                           n_candidates: int = 30) -> float:
+        """
+        使用留一法交叉验证 (Leave-One-Out Cross-Validation, LOOCV) 自动选择最优 σ
+
+        该方法通过交叉验证评估不同 σ 值的泛化能力，选择使预测误差最小的 σ。
+        这是一种数据驱动的参数选择方法，可以在拟合精度和平滑度之间找到平衡。
+
+        算法原理
+        --------
+        留一法交叉验证是一种特殊的 k 折交叉验证，其中 k = N（数据点数量）。
+        对于每个候选 σ 值，算法执行以下步骤：
+
+        1. 遍历所有数据点 i = 1, 2, ..., N
+        2. 对于每个点 i：
+           - 将第 i 个点作为测试点，其余 N-1 个点作为训练集
+           - 使用训练集拟合样条曲线（平滑因子 s = (N-1) × σ²）
+           - 用拟合的样条预测第 i 个点的值
+           - 计算预测误差 eᵢ = (y_true - y_pred)²
+        3. 计算该 σ 值的交叉验证均方根误差：
+           CV-RMSE = √(Σeᵢ / N)
+
+        最终选择使 CV-RMSE 最小的 σ 作为最优值。
+
+        搜索策略
+        --------
+        - 使用对数尺度搜索，因为 σ 的影响在不同数量级差异较大
+        - 默认范围 0.001mm ~ 1.0mm 覆盖了从"几乎插值"到"较强平滑"的范围
+        - 30 个候选值在实践中足以找到接近最优的解
+
+        Args:
+            x_depths: 深度数据数组，单位为米 (m)
+            y_disps_mm: 位移数据数组，单位为毫米 (mm)
+            algo_type (str): 算法类型
+                - 'spline': 三次样条 (k=3)
+                - 'spline5': 五次样条 (k=5)
+            sigma_range (tuple): σ 搜索范围 (mm)，默认 (0.001, 1.0)
+                - 下限越小，曲线越接近插值（可能过拟合）
+                - 上限越大，曲线越平滑（可能欠拟合）
+            n_candidates (int): 候选 σ 数量，默认 30
+                - 增加此值可提高精度但会增加计算时间
+                - 计算复杂度为 O(n_candidates × N²)
+
+        Returns:
+            float: 最优 σ 值，单位为毫米 (mm)
+
+        Note:
+            - 计算时间与 n_candidates × N 成正比，N 为数据点数
+            - 对于 24 个数据点和 30 个候选值，约需进行 720 次样条拟合
+            - 五次样条要求训练集至少有 6 个点（k+1 个）
+
+        Example:
+            >>> solver = PileSolver()
+            >>> optimal_sigma = solver.find_optimal_sigma(
+            ...     depths, displacements, algo_type="spline"
+            ... )
+            >>> print(f"最优 σ = {optimal_sigma:.3f} mm")
+        """
+        # 对数尺度生成候选 σ（覆盖从极精细到较平滑的范围）
+        sigmas = np.logspace(np.log10(sigma_range[0]),
+                             np.log10(sigma_range[1]),
+                             n_candidates)
+
+        best_sigma = sigmas[0]
+        best_cv_error = float('inf')
+
+        for sigma in sigmas:
+            cv_error = self._compute_loocv_error(x_depths, y_disps_mm,
+                                                  sigma, algo_type)
+            if cv_error < best_cv_error:
+                best_cv_error = cv_error
+                best_sigma = sigma
+
+        return float(best_sigma)
+
+    def _compute_loocv_error(self, x, y_mm, sigma_mm: float, algo_type: str) -> float:
+        """
+        计算单个 σ 值的留一法交叉验证误差
+
+        对于给定的 σ 值，依次移除每个数据点，用剩余点拟合样条后预测被移除点，
+        最终返回所有预测误差的均方根 (RMSE)。
+
+        计算过程
+        --------
+        设数据集为 {(x₁,y₁), (x₂,y₂), ..., (xₙ,yₙ)}，对于每个点 i：
+
+        1. 构建训练集：D_train = {(xⱼ,yⱼ) | j ≠ i}
+        2. 计算训练集的平滑因子：s_train = (N-1) × σ²
+           （因为训练集只有 N-1 个点）
+        3. 用训练集拟合样条：spline = UnivariateSpline(D_train, k, s_train)
+        4. 预测被移除点：ŷᵢ = spline(xᵢ)
+        5. 计算平方误差：eᵢ = (yᵢ - ŷᵢ)²
+
+        最终返回：CV-RMSE = √(Σeᵢ / N) × 1000 (转换为 mm)
+
+        Args:
+            x: 深度数据数组，单位为米
+            y_mm: 位移数据数组，单位为毫米
+            sigma_mm (float): 预估测量误差 σ，单位为毫米
+            algo_type (str): 算法类型，'spline' (k=3) 或 'spline5' (k=5)
+
+        Returns:
+            float: 交叉验证均方根误差 (CV-RMSE)，单位为毫米
+                   如果拟合失败或数据点不足，返回 inf
+
+        Note:
+            - 内部计算使用米为单位（与拟合算法一致）
+            - 样条拟合要求 x 递增，因此每次都进行排序
+            - k 阶样条至少需要 k+1 个数据点
+        """
+        from scipy.interpolate import UnivariateSpline
+
+        y_m = np.asarray(y_mm, dtype=float) / 1000.0
+        x = np.asarray(x, dtype=float)
+        n = len(x)
+
+        sigma_m = sigma_mm / 1000.0
+        k = 3 if algo_type == "spline" else 5
+
+        # k 阶样条至少需要 k+1 个点，训练集只有 n-1 个点
+        if n <= k + 1:
+            return float('inf')
+
+        errors = []
+        for i in range(n):
+            # 移除第 i 个点，构建训练集
+            x_train = np.delete(x, i)
+            y_train = np.delete(y_m, i)
+
+            # 排序（scipy.interpolate.UnivariateSpline 要求 x 严格递增）
+            sort_idx = np.argsort(x_train)
+            x_sorted = x_train[sort_idx]
+            y_sorted = y_train[sort_idx]
+
+            try:
+                # 用 N-1 个点拟合，相应调整平滑因子
+                s_train = (n - 1) * (sigma_m ** 2)
+                spline = UnivariateSpline(x_sorted, y_sorted, k=k, s=s_train)
+
+                # 预测被移除的点
+                y_pred = spline(x[i])
+                errors.append((y_m[i] - y_pred) ** 2)
+            except Exception:
+                # 拟合失败（如数据点过少或数值问题），返回无穷大误差
+                errors.append(float('inf'))
+
+        # 返回 RMSE，转换回毫米单位
+        return float(np.sqrt(np.mean(errors)) * 1000)
+

@@ -148,11 +148,14 @@ class MainWindow(QtWidgets.QMainWindow):
         建立UI组件的事件响应机制：
         - 计算按钮点击 -> 执行拟合计算
         - 查询按钮点击 -> 执行单点查询
+        - 自动按钮点击 -> 自动选择最优 σ
         """
         # 连接计算按钮的点击信号到计算处理函数
         self.fit_group.calc_button.clicked.connect(self.on_calculate_clicked)
         # 连接查询按钮的点击信号到查询处理函数
         self.query_group.query_clicked.connect(self.on_query_clicked)
+        # 连接自动选择 σ 信号到处理函数
+        self.fit_group.auto_sigma_requested.connect(self.on_auto_sigma_clicked)
 
     def keyPressEvent(self, event):
         """
@@ -538,7 +541,7 @@ class MainWindow(QtWidgets.QMainWindow):
             pmax = float(np.max(np.abs(pressure))) if len(pressure) else 0.0
             r2 = self.solver.fitting_stats.get("R2", 0.0)
             rmse_mm = self.solver.fitting_stats.get("RMSE_mm", 0.0)
-            print(f"[DEBUG] 统计: R2={r2:.4f}, RMSE={rmse_mm:.4f}mm, Mmax={mmax:.3f}kN·m, Qmax={qmax:.3f}kN, pmax={pmax:.3f}kPa")
+            print(f"[DEBUG] 统计: R2={r2:.4f}, RMSE={rmse_mm:.4f}mm, Mmax={mmax:.3f}kN·m, Qmax={qmax:.3f}kN, pmax={pmax:.3f}kPa\n")
 
             # ===== 步骤5: 更新界面 =====
             # 获取多项式表达式
@@ -597,4 +600,93 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as exc:  # noqa: BLE001
             # 显示警告对话框提示错误
             QtWidgets.QMessageBox.warning(self, "提示", str(exc))
+
+    def on_auto_sigma_clicked(self):
+        """
+        自动选择最优 σ 按钮点击处理函数
+
+        使用留一法交叉验证自动找到最优的预估误差 σ：
+        1. 解析输入数据
+        2. 根据数据点数调整滑块范围
+        3. 调用求解器的 find_optimal_sigma 方法
+        4. 更新滑块值并提示用户
+        """
+        try:
+            # ===== 步骤1: 解析输入数据 =====
+            raw_text = self.data_group.text_edit.toPlainText().strip()
+            if not raw_text:
+                depths, disps = self._get_default_data()
+                self._set_default_params()
+                self._fill_default_data_to_textbox(depths, disps)
+            else:
+                depths, disps = utils.parse_depth_disp(raw_text)
+
+            # 检查数据量（五次样条需要至少6个点）
+            algo_type = self.fit_group.get_algo_type()
+            min_points = 7 if algo_type == "spline5" else 5
+            if len(depths) < min_points:
+                QtWidgets.QMessageBox.warning(
+                    self, "提示",
+                    f"自动选择需要至少 {min_points} 个数据点\n"
+                    f"（当前只有 {len(depths)} 个点）"
+                )
+                return
+
+            # ===== 步骤2: 根据数据点数调整滑块范围 =====
+            max_sigma = self.fit_group.adjust_slider_range_by_n(len(depths))
+
+            # ===== 步骤3: 显示进度提示 =====
+            self.fit_group.auto_btn.setEnabled(False)
+            self.fit_group.auto_btn.setText("...")
+            QtWidgets.QApplication.processEvents()
+
+            # ===== 步骤4: 调用求解器找最优 σ =====
+            n_candidates = 30
+            optimal_sigma = self.solver.find_optimal_sigma(
+                depths, disps,
+                algo_type=algo_type,
+                sigma_range=(0.001, max_sigma),
+                n_candidates=n_candidates
+            )
+            print(f"[DEBUG] 自动选择: 最优 σ = {optimal_sigma:.4f} mm (搜索范围 0.001~{max_sigma}mm)")
+
+            # ===== 步骤5: 更新滑块值 =====
+            self.fit_group.set_sigma_value(optimal_sigma)
+
+            # ===== 步骤6: 恢复按钮并提示用户 =====
+            self.fit_group.auto_btn.setEnabled(True)
+            self.fit_group.auto_btn.setText("自动")
+
+            # 计算 s 值用于显示
+            sigma_m = optimal_sigma / 1000.0
+            s_value = len(depths) * (sigma_m ** 2)
+            s_percent = s_value * 100
+
+            # 构建详细的计算过程说明
+            algo_name = "三次样条" if algo_type == "spline" else "五次样条"
+            k_value = 3 if algo_type == "spline" else 5
+            n_fits = n_candidates * len(depths)
+
+            process_msg = (
+                f"══════ 留一法交叉验证 (LOOCV) ══════\n\n"
+                f"【算法】{algo_name} (k={k_value})\n"
+                f"【数据】N = {len(depths)} 个测点\n"
+                f"【搜索】{n_candidates} 个候选 σ（0.001~{max_sigma:.1f}mm）\n"
+                f"【计算】共进行 {n_fits} 次样条拟合\n\n"
+                f"══════════ 计算结果 ══════════\n\n"
+                f"【最优 σ】{optimal_sigma:.4f} mm\n"
+                f"【平滑因子】s = N × σ² = {s_percent:.6f}%\n\n"
+                f"══════════════════════════════\n"
+                f"点击「开始计算」查看拟合结果"
+            )
+
+            QtWidgets.QMessageBox.information(
+                self, "自动选择完成", process_msg
+            )
+
+        except Exception as exc:  # noqa: BLE001
+            # 恢复按钮状态
+            self.fit_group.auto_btn.setEnabled(True)
+            self.fit_group.auto_btn.setText("自动")
+            QtWidgets.QMessageBox.warning(self, "错误", str(exc))
 

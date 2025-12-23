@@ -232,6 +232,7 @@ class FitControlGroup(QtWidgets.QGroupBox):
     # 定义信号：参数改变时发出
     degree_changed = QtCore.pyqtSignal(int)
     algo_changed = QtCore.pyqtSignal(str)
+    auto_sigma_requested = QtCore.pyqtSignal()  # 请求自动选择 σ
 
     def __init__(self, parent=None):
         """
@@ -284,15 +285,27 @@ class FitControlGroup(QtWidgets.QGroupBox):
         self.formula_label.setStyleSheet("color: #94a3b8; font-size: 11px; font-style: italic;")
         self.formula_label.setVisible(False)  # 默认隐藏
 
+        # 自动选择 σ 按钮（仅样条模式显示）
+        self.auto_btn = QtWidgets.QPushButton("自动")
+        self.auto_btn.setToolTip("使用交叉验证自动选择最优 σ")
+        self.auto_btn.setFixedWidth(70)
+        self.auto_btn.setVisible(False)  # 默认隐藏
+        self.auto_btn.clicked.connect(self.auto_sigma_requested.emit)
+
         # 创建计算按钮
         btn = QtWidgets.QPushButton("开始计算")
         self.calc_button = btn
+
+        # 滑块行布局（滑块 + 自动按钮）
+        slider_layout = QtWidgets.QHBoxLayout()
+        slider_layout.addWidget(self.slider)
+        slider_layout.addWidget(self.auto_btn)
 
         # 设置垂直布局
         layout = QtWidgets.QVBoxLayout()
         layout.addLayout(algo_layout)
         layout.addWidget(self.label)
-        layout.addWidget(self.slider)
+        layout.addLayout(slider_layout)
         layout.addWidget(self.s_label)
         layout.addWidget(self.formula_label)
         layout.addWidget(btn)
@@ -323,26 +336,29 @@ class FitControlGroup(QtWidgets.QGroupBox):
             self.label.setText("阶数: 5")
             self.s_label.setVisible(False)
             self.formula_label.setVisible(False)
+            self.auto_btn.setVisible(False)
             self.algo_changed.emit("polynomial")
         elif self.spline_radio.isChecked():
-            # 切换到三次样条模式（滑块 0-600 对应 0.000mm-0.600mm）
+            # 切换到三次样条模式（滑块 0-1000 对应 0.000mm-1.000mm）
             self.slider.setMinimum(0)
-            self.slider.setMaximum(600)
-            self.slider.setValue(300)  # 默认 0.300mm
-            self.label.setText("预估误差 σ: 0.300 mm")
+            self.slider.setMaximum(1000)
+            self.slider.setValue(500)  # 默认 0.500mm
+            self.label.setText("预估误差 σ: 0.500 mm")
             self.s_label.setVisible(True)
             self.s_label.setText("平滑因子 s: -")
             self.formula_label.setVisible(True)
+            self.auto_btn.setVisible(True)
             self.algo_changed.emit("spline")
         else:
             # 切换到五次样条模式
             self.slider.setMinimum(0)
-            self.slider.setMaximum(600)
-            self.slider.setValue(150)  # 默认 0.150mm
-            self.label.setText("预估误差 σ: 0.150 mm")
+            self.slider.setMaximum(1000)
+            self.slider.setValue(500)  # 默认 0.500mm
+            self.label.setText("预估误差 σ: 0.500 mm")
             self.s_label.setVisible(True)
             self.s_label.setText("平滑因子 s: -")
             self.formula_label.setVisible(True)
+            self.auto_btn.setVisible(True)
             self.algo_changed.emit("spline5")
 
     def _update_label(self, val: int):
@@ -399,6 +415,45 @@ class FitControlGroup(QtWidgets.QGroupBox):
         # 转换为百分比显示（s * 100）
         s_percent = s * 100
         self.s_label.setText(f"平滑因子 s: {s_percent:.6f}%")
+
+    def set_sigma_value(self, sigma_mm: float):
+        """
+        设置 σ 值（由自动选择调用）
+
+        Args:
+            sigma_mm (float): 预估误差 σ，单位为毫米
+        """
+        # 将 sigma_mm 转换为滑块值 (0-max)
+        slider_val = int(sigma_mm * 1000)
+        slider_val = max(0, min(self.slider.maximum(), slider_val))
+        self.slider.setValue(slider_val)
+
+    def adjust_slider_range_by_n(self, n_points: int):
+        """
+        根据数据点数量自动调整滑块的最大值
+
+        数据点越多，允许的 σ 范围越大：
+        - N < 30: 最大 1.000mm
+        - 30 ≤ N < 40: 最大 2.000mm
+        - N ≥ 40: 最大 3.000mm
+
+        Args:
+            n_points (int): 数据点数量
+
+        Returns:
+            float: 调整后的最大 σ 值 (mm)
+        """
+        if n_points < 30:
+            max_sigma = 1.0
+        elif n_points < 40:
+            max_sigma = 2.0
+        else:
+            max_sigma = 3.0
+
+        # 更新滑块最大值（滑块值 = σ_mm × 1000）
+        self.slider.setMaximum(int(max_sigma * 1000))
+
+        return max_sigma
 
 
 class QueryGroup(QtWidgets.QGroupBox):
