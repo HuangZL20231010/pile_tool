@@ -498,22 +498,47 @@ class MainWindow(QtWidgets.QMainWindow):
             E_unit = self.params_group.E_unit.currentText()
             section_type = self.params_group.section_type()
             dims = self._read_section_dims(section_type)
-            degree = self.fit_group.slider.value()
-            print(f"[DEBUG] 参数: E={E_val}{E_unit}, section={section_type}, dims={dims}, degree={degree}")
+            algo_type = self.fit_group.get_algo_type()
+            param_value = self.fit_group.slider.value()
+            print(f"[DEBUG] 参数: E={E_val}{E_unit}, section={section_type}, dims={dims}, algo={algo_type}, param={param_value}")
 
             # ===== 步骤3: 执行计算 =====
             # 连接 solver 到绘图画布，用于交互式十字线跟踪
             self.plot_canvas.set_solver(self.solver)
             self.solver.set_parameters(E_val, E_unit, section_type, dims)
-            self.solver.fit_data(depths, disps, degree=degree)
-            depth_dense, disp_fit_mm, moment = self.solver.get_results_arrays()
-            print(f"[DEBUG] 拟合完成: coeffs={self.solver.poly_coeffs}")
+            # 根据算法类型选择参数
+            if algo_type == "polynomial":
+                self.solver.fit_data(depths, disps, degree=param_value, algo_type="polynomial")
+            elif algo_type == "spline":
+                sigma = self.fit_group.get_sigma_value()
+                self.solver.fit_data(depths, disps, algo_type="spline", sigma_mm=sigma)
+                # 计算并打印 s 值
+                sigma_m = sigma / 1000.0
+                s = len(depths) * (sigma_m ** 2)
+                print(f"[DEBUG] 样条参数: σ={sigma:.3f}mm, N={len(depths)}, s={s}")
+                # 更新 s 显示
+                self.fit_group.update_s_display(len(depths))
+            else:
+                # 五次样条
+                sigma = self.fit_group.get_sigma_value()
+                self.solver.fit_data(depths, disps, algo_type="spline5", sigma_mm=sigma)
+                # 计算并打印 s 值
+                sigma_m = sigma / 1000.0
+                s = len(depths) * (sigma_m ** 2)
+                print(f"[DEBUG] 样条参数: σ={sigma:.3f}mm, N={len(depths)}, s={s}")
+                # 更新 s 显示
+                self.fit_group.update_s_display(len(depths))
+            depth_dense, disp_fit_mm, moment, shear, pressure = self.solver.get_results_arrays()
+            print(f"[DEBUG] 拟合完成: algo={algo_type}")
 
             # ===== 步骤4: 计算统计信息 =====
-            mmax = float(moment.max()) if len(moment) else 0.0
+            import numpy as np
+            mmax = float(np.max(np.abs(moment))) if len(moment) else 0.0
+            qmax = float(np.max(np.abs(shear))) if len(shear) else 0.0
+            pmax = float(np.max(np.abs(pressure))) if len(pressure) else 0.0
             r2 = self.solver.fitting_stats.get("R2", 0.0)
             rmse_mm = self.solver.fitting_stats.get("RMSE_mm", 0.0)
-            print(f"[DEBUG] 统计: R2={r2:.4f}, RMSE={rmse_mm:.4f}mm, Mmax={mmax:.3f}kN·m")
+            print(f"[DEBUG] 统计: R2={r2:.4f}, RMSE={rmse_mm:.4f}mm, Mmax={mmax:.3f}kN·m, Qmax={qmax:.3f}kN, pmax={pmax:.3f}kPa")
 
             # ===== 步骤5: 更新界面 =====
             # 获取多项式表达式
@@ -521,8 +546,8 @@ class MainWindow(QtWidgets.QMainWindow):
             # 获取弯矩函数表达式
             moment_expr = self.solver.get_moment_expression()
             # 更新图表和统计信息
-            self.plot_canvas.plot(depths, disps, depth_dense, disp_fit_mm, moment)
-            self.stats_bar.update_stats(r2, rmse_mm, mmax, poly_expr, moment_expr)
+            self.plot_canvas.plot(depths, disps, depth_dense, disp_fit_mm, moment, shear, pressure)
+            self.stats_bar.update_stats(r2, rmse_mm, mmax, qmax, pmax, poly_expr, moment_expr, algo_type)
 
             # 切换到结果页面
             self.right_stack.setCurrentIndex(1)
@@ -561,7 +586,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 f"深度 {x_val:.3f} m\n"           # 深度值
                 f"位移: {result.y_mm:.3f} mm\n"   # 位移值
                 f"曲率: {result.curvature:.6f} 1/m\n"  # 曲率值
-                f"弯矩: {result.moment:.3f} kN·m"     # 弯矩值
+                f"弯矩: {result.moment:.3f} kN·m\n"    # 弯矩值
+                f"剪力: {result.shear:.3f} kN\n"       # 剪力值
+                f"土压力: {result.pressure:.3f} kPa"   # 土压力值
             )
 
             # 显示信息对话框

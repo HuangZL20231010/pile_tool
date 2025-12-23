@@ -226,32 +226,63 @@ class FitControlGroup(QtWidgets.QGroupBox):
     """
     拟合控制组件
 
-    提供多项式阶数调节滑块和计算按钮。
-    当阶数改变时发出信号供其他组件响应。
+    提供算法选择（多项式/三次样条/五次样条）、参数调节滑块和计算按钮。
+    支持动态切换算法类型，滑块语义和范围随之变化。
     """
-    # 定义信号：阶数改变时发出
+    # 定义信号：参数改变时发出
     degree_changed = QtCore.pyqtSignal(int)
+    algo_changed = QtCore.pyqtSignal(str)
 
     def __init__(self, parent=None):
         """
         初始化拟合控制组件
 
-        创建阶数滑块、显示标签和计算按钮。
-        阶数范围限制在3-9之间，默认值为5。
+        创建算法选择器、参数滑块、显示标签和计算按钮。
+        多项式模式：阶数范围3-9，默认5
+        样条模式：预估误差 σ 范围 0.1-5.0mm，默认 0.5mm
         """
         # 设置分组框标题
         super().__init__("拟合控制", parent)
 
-        # 创建水平滑块用于调节多项式阶数
+        # ===== 算法选择 Radio Buttons =====
+        self.poly_radio = QtWidgets.QRadioButton("多项式拟合")
+        self.spline_radio = QtWidgets.QRadioButton("三次样条")
+        self.spline5_radio = QtWidgets.QRadioButton("五次样条")
+        self.poly_radio.setChecked(True)  # 默认选中多项式
+
+        # 创建按钮组确保单选行为
+        self.algo_group = QtWidgets.QButtonGroup(self)
+        self.algo_group.addButton(self.poly_radio)
+        self.algo_group.addButton(self.spline_radio)
+        self.algo_group.addButton(self.spline5_radio)
+
+        # 算法选择水平布局
+        algo_layout = QtWidgets.QHBoxLayout()
+        algo_layout.addWidget(self.poly_radio)
+        algo_layout.addWidget(self.spline_radio)
+        algo_layout.addWidget(self.spline5_radio)
+
+        # ===== 参数滑块 =====
+        # 创建水平滑块用于调节参数
         self.slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        self.slider.setMinimum(3)  # 最小阶数
-        self.slider.setMaximum(9)  # 最大阶数
-        self.slider.setValue(5)    # 默认阶数
+        self.slider.setMinimum(3)  # 多项式模式：最小阶数
+        self.slider.setMaximum(9)  # 多项式模式：最大阶数
+        self.slider.setValue(5)    # 多项式模式：默认阶数
         # 连接滑块值改变信号到自定义信号
         self.slider.valueChanged.connect(self.degree_changed)
 
-        # 显示当前阶数的标签
+        # 显示当前参数的标签
         self.label = QtWidgets.QLabel("阶数: 5")
+
+        # 显示平滑因子 s 的标签（仅样条模式显示）
+        self.s_label = QtWidgets.QLabel("平滑因子 s: -")
+        self.s_label.setStyleSheet("color: #64748b; font-size: 12px;")
+        self.s_label.setVisible(False)  # 默认隐藏
+
+        # 显示平滑因子公式（仅样条模式显示）
+        self.formula_label = QtWidgets.QLabel("公式: s = N × σ²")
+        self.formula_label.setStyleSheet("color: #94a3b8; font-size: 11px; font-style: italic;")
+        self.formula_label.setVisible(False)  # 默认隐藏
 
         # 创建计算按钮
         btn = QtWidgets.QPushButton("开始计算")
@@ -259,26 +290,115 @@ class FitControlGroup(QtWidgets.QGroupBox):
 
         # 设置垂直布局
         layout = QtWidgets.QVBoxLayout()
+        layout.addLayout(algo_layout)
         layout.addWidget(self.label)
         layout.addWidget(self.slider)
+        layout.addWidget(self.s_label)
+        layout.addWidget(self.formula_label)
         layout.addWidget(btn)
         self.setLayout(layout)
 
-        # 连接滑块到标签更新函数
+        # 连接信号
         self.slider.valueChanged.connect(self._update_label)
+        self.poly_radio.toggled.connect(self._on_algo_changed)
+        self.spline_radio.toggled.connect(self._on_algo_changed)
+        self.spline5_radio.toggled.connect(self._on_algo_changed)
+
+    def _on_algo_changed(self, checked: bool):
+        """
+        算法切换时更新滑块配置
+
+        根据选中的算法类型，调整滑块的范围、默认值和标签文本。
+        多项式：阶数 3-9，默认 5
+        样条：预估误差 σ 0.000-0.600mm，默认 0.250mm（滑块范围 0-600，精度 0.001mm）
+        """
+        if not checked:
+            return  # 只在选中时处理
+
+        if self.poly_radio.isChecked():
+            # 切换到多项式模式
+            self.slider.setMinimum(3)
+            self.slider.setMaximum(9)
+            self.slider.setValue(5)
+            self.label.setText("阶数: 5")
+            self.s_label.setVisible(False)
+            self.formula_label.setVisible(False)
+            self.algo_changed.emit("polynomial")
+        elif self.spline_radio.isChecked():
+            # 切换到三次样条模式（滑块 0-600 对应 0.000mm-0.600mm）
+            self.slider.setMinimum(0)
+            self.slider.setMaximum(600)
+            self.slider.setValue(300)  # 默认 0.300mm
+            self.label.setText("预估误差 σ: 0.300 mm")
+            self.s_label.setVisible(True)
+            self.s_label.setText("平滑因子 s: -")
+            self.formula_label.setVisible(True)
+            self.algo_changed.emit("spline")
+        else:
+            # 切换到五次样条模式
+            self.slider.setMinimum(0)
+            self.slider.setMaximum(600)
+            self.slider.setValue(150)  # 默认 0.150mm
+            self.label.setText("预估误差 σ: 0.150 mm")
+            self.s_label.setVisible(True)
+            self.s_label.setText("平滑因子 s: -")
+            self.formula_label.setVisible(True)
+            self.algo_changed.emit("spline5")
 
     def _update_label(self, val: int):
         """
-        更新阶数显示标签
+        更新参数显示标签
 
-        当滑块值改变时，更新标签文本并发出信号。
+        当滑块值改变时，根据当前算法类型更新标签文本。
 
         Args:
-            val (int): 新的阶数值
+            val (int): 新的参数值
         """
-        self.label.setText(f"阶数: {val}")
-        # 发出阶数改变信号
+        if self.poly_radio.isChecked():
+            self.label.setText(f"阶数: {val}")
+        else:
+            # 样条模式：滑块值除以1000显示为 σ (mm)
+            sigma = val / 1000.0
+            self.label.setText(f"预估误差 σ: {sigma:.3f} mm")
+        # 发出参数改变信号
         self.degree_changed.emit(val)
+
+    def get_algo_type(self) -> str:
+        """
+        获取当前选中的算法类型
+
+        Returns:
+            str: "polynomial" 表示多项式，"spline" 表示三次样条，"spline5" 表示五次样条
+        """
+        if self.poly_radio.isChecked():
+            return "polynomial"
+        elif self.spline_radio.isChecked():
+            return "spline"
+        else:
+            return "spline5"
+
+    def get_sigma_value(self) -> float:
+        """
+        获取预估误差 σ（单位：mm）
+
+        Returns:
+            float: 预估误差，范围 0.000-0.600 mm
+        """
+        return self.slider.value() / 1000.0
+
+    def update_s_display(self, n_points: int):
+        """
+        根据数据点数更新平滑因子 s 的显示
+
+        Args:
+            n_points (int): 数据点数量
+        """
+        sigma_mm = self.get_sigma_value()
+        sigma_m = sigma_mm / 1000.0  # 转换为米
+        s = n_points * (sigma_m ** 2)
+        # 转换为百分比显示（s * 100）
+        s_percent = s * 100
+        self.s_label.setText(f"平滑因子 s: {s_percent:.6f}%")
 
 
 class QueryGroup(QtWidgets.QGroupBox):
@@ -320,7 +440,7 @@ class StatsBar(QtWidgets.QWidget):
     统计信息显示栏
 
     使用现代卡片式设计显示拟合统计信息和函数表达式。
-    包括拟合质量指标、弯矩信息、位移函数和弯矩函数。
+    包括拟合质量指标、弯矩信息、剪力信息、土压力信息和函数表达式。
     """
 
     def __init__(self, parent=None):
@@ -354,29 +474,41 @@ class StatsBar(QtWidgets.QWidget):
         quality_card.addWidget(quality_title)
         quality_card.addLayout(quality_layout)
 
-        # 弯矩信息组
-        moment_title = QtWidgets.QLabel("弯矩信息")
-        moment_title.setStyleSheet("font-weight: 600; font-size: 13px; color: #64748b;")
+        # 极值信息组（弯矩、剪力、土压力）
+        extreme_title = QtWidgets.QLabel("极值信息")
+        extreme_title.setStyleSheet("font-weight: 600; font-size: 13px; color: #64748b;")
 
         self.mmax_label = QtWidgets.QLabel("Mmax = -")
         self.mmax_label.setStyleSheet("font-size: 16px; font-weight: 600; color: #0f172a;")
 
-        moment_card = QtWidgets.QVBoxLayout()
-        moment_card.setSpacing(8)
-        moment_card.addWidget(moment_title)
-        moment_card.addWidget(self.mmax_label)
+        self.qmax_label = QtWidgets.QLabel("Qmax = -")
+        self.qmax_label.setStyleSheet("font-size: 16px; font-weight: 600; color: #0f172a;")
 
-        # 第一行：质量指标和弯矩信息
+        self.pmax_label = QtWidgets.QLabel("pmax = -")
+        self.pmax_label.setStyleSheet("font-size: 16px; font-weight: 600; color: #0f172a;")
+
+        extreme_layout = QtWidgets.QHBoxLayout()
+        extreme_layout.setSpacing(24)
+        extreme_layout.addWidget(self.mmax_label)
+        extreme_layout.addWidget(self.qmax_label)
+        extreme_layout.addWidget(self.pmax_label)
+        extreme_layout.addStretch()
+
+        extreme_card = QtWidgets.QVBoxLayout()
+        extreme_card.setSpacing(8)
+        extreme_card.addWidget(extreme_title)
+        extreme_card.addLayout(extreme_layout)
+
+        # 第一行：质量指标和极值信息
         top_row = QtWidgets.QHBoxLayout()
         top_row.setSpacing(48)
         top_row.addLayout(quality_card, 1)
-        top_row.addLayout(moment_card, 1)
-        top_row.addStretch(2)
+        top_row.addLayout(extreme_card, 2)
 
         # ========== 创建函数表达式卡片 ==========
         # 位移拟合函数
-        disp_title = QtWidgets.QLabel("位移拟合函数 y(x)")
-        disp_title.setStyleSheet(
+        self.disp_title = QtWidgets.QLabel("位移拟合函数 y(x)")
+        self.disp_title.setStyleSheet(
             "font-weight: 600; font-size: 13px; color: #64748b; margin-top: 4px;"
         )
 
@@ -390,7 +522,7 @@ class StatsBar(QtWidgets.QWidget):
 
         disp_func_layout = QtWidgets.QVBoxLayout()
         disp_func_layout.setSpacing(6)
-        disp_func_layout.addWidget(disp_title)
+        disp_func_layout.addWidget(self.disp_title)
         disp_func_layout.addWidget(self.poly_label)
 
         # 弯矩函数
@@ -441,8 +573,11 @@ class StatsBar(QtWidgets.QWidget):
         r2: float,
         rmse_mm: float,
         mmax: float,
+        qmax: float = 0.0,
+        pmax: float = 0.0,
         poly_expr: str = "",
         moment_expr: str = "",
+        algo_type: str = "polynomial",
     ):
         """
         更新统计信息显示
@@ -451,8 +586,11 @@ class StatsBar(QtWidgets.QWidget):
             r2 (float): 决定系数R²
             rmse_mm (float): 均方根误差（毫米）
             mmax (float): 最大弯矩值（kN·m）
+            qmax (float): 最大剪力值（kN）
+            pmax (float): 最大土压力值（kPa）
             poly_expr (str): 位移拟合函数表达式，可选
             moment_expr (str): 弯矩函数表达式，可选
+            algo_type (str): 算法类型，'polynomial'、'spline' 或 'spline5'
         """
         # 更新拟合质量指标
         self.r2_label.setText(f"R² = {r2:.4f}")
@@ -460,8 +598,25 @@ class StatsBar(QtWidgets.QWidget):
         # RMSE添加单位标注
         self.rmse_label.setText(f"RMSE = {rmse_mm:.2f} mm")
 
-        # 更新最大弯矩，使用醒目的红色
+        # 更新最大弯矩
         self.mmax_label.setText(f"Mmax = {mmax:.2f} kN·m")
+
+        # 更新最大剪力
+        self.qmax_label.setText(f"Qmax = {qmax:.2f} kN")
+
+        # 更新最大土压力
+        if algo_type == "spline":
+            self.pmax_label.setText("pmax = N/A")
+        else:
+            self.pmax_label.setText(f"pmax = {pmax:.2f} kPa")
+
+        # 根据算法类型更新标题
+        if algo_type == "spline":
+            self.disp_title.setText("位移拟合函数 y(x) - 三次样条")
+        elif algo_type == "spline5":
+            self.disp_title.setText("位移拟合函数 y(x) - 五次样条")
+        else:
+            self.disp_title.setText("位移拟合函数 y(x)")
 
         # 更新位移拟合函数表达式
         if poly_expr:
