@@ -1,0 +1,152 @@
+# CLAUDE.md - 项目指南
+
+## 项目概述
+
+围护桩反分析工具 (PileBackAnalysis) - 基于测斜仪位移数据反算围护桩内力的 PyQt6 桌面应用程序。
+
+## 快速开始
+
+### 环境设置
+```bash
+# 创建虚拟环境
+conda create -n pile_tool python=3.10
+conda activate pile_tool
+
+# 安装依赖
+pip install -r requirements.txt
+```
+
+### 运行程序
+```bash
+python main.py
+```
+
+### 打包发布
+```bash
+pyinstaller --noconsole --onefile --name PileBackAnalysis main.py
+```
+
+## 项目结构
+
+```
+pile_tool/
+├── main.py              # 程序入口
+├── requirements.txt     # 依赖列表
+├── PRD.md               # 产品需求文档
+├── README.md            # 用户文档
+├── CLAUDE.md            # 本文件
+├── core/                # 核心计算模块
+│   ├── __init__.py
+│   ├── calculator.py    # PileSolver 类 - 拟合与力学计算
+│   ├── utils.py         # 工具函数（单位转换、数据解析）
+│   └── file_importer.py # CSV/Excel 文件导入
+└── ui/                  # 用户界面模块
+    ├── __init__.py
+    ├── main_window.py   # MainWindow 主窗口
+    ├── components.py    # UI 组件（输入框、滑块、按钮等）
+    └── plotting.py      # Matplotlib 绑图画布
+```
+
+## 核心架构
+
+### 计算引擎 (core/calculator.py)
+
+`PileSolver` 类是核心计算引擎，负责：
+- 多项式拟合 (3-9 阶)
+- 三次/五次样条平滑插值
+- 力学计算：M = E·I·y''，Q = E·I·y'''，p = E·I·y''''
+- 留一法交叉验证 (LOOCV) 自动选择最优平滑参数
+
+关键方法：
+- `set_parameters()` - 设置材料和截面参数
+- `fit_data()` - 执行拟合（多项式/样条）
+- `get_results_arrays()` - 生成绘图数据
+- `query_single_point()` - 单点查询
+- `find_optimal_sigma()` - LOOCV 自动参数选择
+
+### UI 框架 (ui/)
+
+基于 PyQt6 的现代卡片式 UI：
+- `MainWindow` - 主窗口，左右分栏布局
+- `DataInputGroup` - 数据输入（文本框/文件导入）
+- `ParamsGroup` - 材料和截面参数
+- `FitControlGroup` - 算法选择和参数控制
+- `QueryGroup` - 单点查询
+- `StatsBar` - 统计信息栏
+- `PlotCanvas` - Matplotlib 四图联动画布
+
+### 信号槽连接
+
+```python
+# 计算按钮
+fit_group.calc_button.clicked -> on_calculate_clicked()
+
+# 查询按钮
+query_group.query_clicked -> on_query_clicked()
+
+# 自动选择 σ
+fit_group.auto_sigma_requested -> on_auto_sigma_clicked()
+```
+
+## 关键算法
+
+### 平滑因子公式
+```
+s = N × σ²
+```
+- N: 数据点数量
+- σ: 测斜仪预估误差 (mm)
+
+### 留一法交叉验证 (LOOCV)
+
+用于自动选择最优 σ：
+1. 对数尺度生成候选 σ 值
+2. 对每个 σ：依次移除每个点，用剩余点拟合，预测被移除点
+3. 计算 CV-RMSE = √(Σeᵢ / N)
+4. 选择使 CV-RMSE 最小的 σ
+
+### 动态滑块范围
+根据数据点数 N 调整 σ 最大值：
+- N < 30: 1.0 mm
+- 30 ≤ N < 40: 2.0 mm
+- N ≥ 40: 3.0 mm
+
+## 单位约定
+
+| 物理量 | 输入单位 | 内部计算单位 | 输出单位 |
+|--------|----------|--------------|----------|
+| 深度 | m | m | m |
+| 位移 | mm | m | mm |
+| 弹性模量 E | MPa/kPa | kPa | - |
+| 截面尺寸 | mm | m | - |
+| 弯矩 M | - | - | kN·m |
+| 剪力 Q | - | - | kN |
+| 土压力 p | - | - | kPa |
+
+## 代码风格
+
+- Python 3.10+
+- 类型注解 (typing)
+- 中文注释和文档字符串
+- 模块化设计，核心计算与 UI 分离
+
+## 常见开发任务
+
+### 添加新的拟合算法
+1. 在 `calculator.py` 的 `fit_data()` 中添加新分支
+2. 在 `components.py` 的 `FitControlGroup` 中添加 RadioButton
+3. 更新 `get_algo_type()` 返回值
+
+### 修改 UI 样式
+主题颜色定义在 `main_window.py` 的 `_apply_theme()` 方法中。
+
+### 添加新的统计指标
+1. 在 `calculator.py` 的 `fitting_stats` 字典中添加
+2. 在 `components.py` 的 `StatsBar.update_stats()` 中添加显示
+
+## 注意事项
+
+- 土压力曲线由四阶导数计算，数值可能不稳定
+- 五次样条需要至少 6 个数据点
+- LOOCV 计算量较大，数据点多时需要几秒钟
+- 绘图坐标系：Y 轴深度向下为正（岩土工程习惯）
