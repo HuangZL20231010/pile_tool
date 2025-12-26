@@ -56,21 +56,23 @@ pile_tool/
 - 三次/五次样条平滑插值
 - 力学计算：M = E·I·y''，Q = E·I·y'''，p = E·I·y''''
 - 留一法交叉验证 (LOOCV) 自动选择最优平滑参数
+- 边界条件处理（奇对称镜像法）
 
 关键方法：
 - `set_parameters()` - 设置材料和截面参数
-- `fit_data()` - 执行拟合（多项式/样条）
+- `fit_data()` - 执行拟合（多项式/样条），支持 `boundary_conditions` 参数
 - `get_results_arrays()` - 生成绘图数据
 - `query_single_point()` - 单点查询
 - `find_optimal_sigma()` - LOOCV 自动参数选择
+- `_apply_odd_symmetric_mirror()` - 奇对称镜像数据增强（边界条件实现）
 
 ### UI 框架 (ui/)
 
 基于 PyQt6 的现代卡片式 UI：
-- `MainWindow` - 主窗口，左右分栏布局
-- `DataInputGroup` - 数据输入（文本框/文件导入）
+- `MainWindow` - 主窗口，左右分栏布局（左侧面板支持滚动）
+- `DataInputGroup` - 数据输入（文本框/文件导入/边界条件设置）
 - `ParamsGroup` - 材料和截面参数
-- `FitControlGroup` - 算法选择和参数控制
+- `FitControlGroup` - 算法选择和参数控制（σ 范围固定 0~2.5mm）
 - `QueryGroup` - 单点查询
 - `StatsBar` - 统计信息栏
 - `PlotCanvas` - Matplotlib 四图联动画布
@@ -105,11 +107,24 @@ s = N × σ²
 3. 计算 CV-RMSE = √(Σeᵢ / N)
 4. 选择使 CV-RMSE 最小的 σ
 
-### 动态滑块范围
-根据数据点数 N 调整 σ 最大值：
-- N < 30: 1.0 mm
-- 30 ≤ N < 40: 2.0 mm
-- N ≥ 40: 3.0 mm
+### σ 参数范围
+σ 滑块范围固定为 0 ~ 2.500 mm。
+
+### 边界条件（奇对称镜像法）
+用于强制样条曲线满足物理边界条件：
+- 约束效果：y(x₀) = 指定位移，y''(x₀) = 0（弯矩为零）
+- 实现原理：将数据点 (xᵢ, yᵢ) 关于边界点 (x₀, y₀) 镜像为 (2x₀-xᵢ, 2y₀-yᵢ)
+- 边界条件字典格式：
+```python
+boundary_conditions = {
+    'top_enabled': bool,
+    'top_depth': float,     # 桩顶深度 (m)
+    'top_disp': float,      # 桩顶位移 (mm)
+    'bottom_enabled': bool,
+    'bottom_depth': float,  # 桩底深度 (m)
+    'bottom_disp': float,   # 桩底位移 (mm)
+}
+```
 
 ## 单位约定
 
@@ -150,3 +165,5 @@ s = N × σ²
 - 五次样条需要至少 6 个数据点
 - LOOCV 计算量较大，数据点多时需要几秒钟
 - 绘图坐标系：Y 轴深度向下为正（岩土工程习惯）
+- 边界条件仅对样条拟合有效，多项式拟合不支持
+- 左侧面板使用 QScrollArea 包装，支持滚动查看

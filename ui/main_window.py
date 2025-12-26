@@ -64,7 +64,7 @@ class MainWindow(QtWidgets.QMainWindow):
         构建窗口布局
 
         创建左右分栏布局：
-        - 左侧：控制面板（固定宽度）
+        - 左侧：控制面板（固定宽度，可滚动）
         - 右侧：绘图和统计区域（可伸缩）
         """
         # ===== 左侧控制面板 =====
@@ -80,13 +80,20 @@ class MainWindow(QtWidgets.QMainWindow):
         # 添加伸缩空间，将以上组件推到顶部
         left_panel.addStretch(1)
 
-        # 创建左侧面板容器控件
-        left_widget = QtWidgets.QWidget()
-        left_widget.setLayout(left_panel)
+        # 创建左侧面板内容容器
+        left_content = QtWidgets.QWidget()
+        left_content.setLayout(left_panel)
+        left_content.setObjectName("leftPanel")
+
+        # 创建滚动区域包装左侧面板
+        left_scroll = QtWidgets.QScrollArea()
+        left_scroll.setWidget(left_content)
+        left_scroll.setWidgetResizable(True)  # 允许内容自适应宽度
+        left_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        left_scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         # 设置固定宽度，确保布局稳定
-        left_widget.setFixedWidth(400)
-        # 设置左侧面板背景色，与右侧区分
-        left_widget.setObjectName("leftPanel")
+        left_scroll.setFixedWidth(400)
+        left_scroll.setObjectName("leftScroll")
 
         # ===== 右侧绘图面板 =====
         # 创建堆叠窗口，用于切换欢迎页和结果页
@@ -133,7 +140,7 @@ class MainWindow(QtWidgets.QMainWindow):
         main_layout = QtWidgets.QHBoxLayout()
         main_layout.setSpacing(0)  # 取消间距，让左右面板紧贴
         main_layout.setContentsMargins(0, 0, 0, 0)  # 取消边距
-        main_layout.addWidget(left_widget)           # 左侧面板
+        main_layout.addWidget(left_scroll)           # 左侧面板（可滚动）
         main_layout.addWidget(right_widget, stretch=1)  # 右侧面板，可伸缩
 
         # 创建中央控件并设置为主窗口的中央部件
@@ -211,6 +218,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
             /* 左侧面板背景 */
             #leftPanel {{
+                background-color: {bg_panel};
+            }}
+
+            /* 左侧滚动区域 */
+            #leftScroll {{
                 background-color: {bg_panel};
                 border-right: 1px solid {border_light};
             }}
@@ -503,7 +515,11 @@ class MainWindow(QtWidgets.QMainWindow):
             dims = self._read_section_dims(section_type)
             algo_type = self.fit_group.get_algo_type()
             param_value = self.fit_group.slider.value()
+            # 获取边界条件
+            bc = self.data_group.get_boundary_conditions()
             print(f"[DEBUG] 参数: E={E_val}{E_unit}, section={section_type}, dims={dims}, algo={algo_type}, param={param_value}")
+            if bc['top_enabled'] or bc['bottom_enabled']:
+                print(f"[DEBUG] 边界条件: top={bc['top_enabled']}({bc['top_depth']}m,{bc['top_disp']}mm), bottom={bc['bottom_enabled']}({bc['bottom_depth']}m,{bc['bottom_disp']}mm)")
 
             # ===== 步骤3: 执行计算 =====
             # 连接 solver 到绘图画布，用于交互式十字线跟踪
@@ -514,7 +530,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.solver.fit_data(depths, disps, degree=param_value, algo_type="polynomial")
             elif algo_type == "spline":
                 sigma = self.fit_group.get_sigma_value()
-                self.solver.fit_data(depths, disps, algo_type="spline", sigma_mm=sigma)
+                self.solver.fit_data(depths, disps, algo_type="spline", sigma_mm=sigma,
+                                     boundary_conditions=bc)
                 # 计算并打印 s 值
                 sigma_m = sigma / 1000.0
                 s = len(depths) * (sigma_m ** 2)
@@ -524,7 +541,8 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 # 五次样条
                 sigma = self.fit_group.get_sigma_value()
-                self.solver.fit_data(depths, disps, algo_type="spline5", sigma_mm=sigma)
+                self.solver.fit_data(depths, disps, algo_type="spline5", sigma_mm=sigma,
+                                     boundary_conditions=bc)
                 # 计算并打印 s 值
                 sigma_m = sigma / 1000.0
                 s = len(depths) * (sigma_m ** 2)
@@ -632,21 +650,25 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
                 return
 
-            # ===== 步骤2: 根据数据点数调整滑块范围 =====
-            max_sigma = self.fit_group.adjust_slider_range_by_n(len(depths))
+            # ===== 步骤2: 设置固定 σ 搜索范围 =====
+            max_sigma = 2.5  # 固定最大值
 
-            # ===== 步骤3: 显示进度提示 =====
+            # ===== 步骤3: 获取边界条件 =====
+            bc = self.data_group.get_boundary_conditions()
+
+            # ===== 步骤4: 显示进度提示 =====
             self.fit_group.auto_btn.setEnabled(False)
             self.fit_group.auto_btn.setText("...")
             QtWidgets.QApplication.processEvents()
 
-            # ===== 步骤4: 调用求解器找最优 σ =====
+            # ===== 步骤5: 调用求解器找最优 σ =====
             n_candidates = 30
             optimal_sigma = self.solver.find_optimal_sigma(
                 depths, disps,
                 algo_type=algo_type,
                 sigma_range=(0.001, max_sigma),
-                n_candidates=n_candidates
+                n_candidates=n_candidates,
+                boundary_conditions=bc
             )
             print(f"[DEBUG] 自动选择: 最优 σ = {optimal_sigma:.4f} mm (搜索范围 0.001~{max_sigma}mm)")
 

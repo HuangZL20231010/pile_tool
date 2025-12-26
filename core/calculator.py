@@ -78,6 +78,76 @@ class PileSolver:
         self._x_range: Tuple[float, float] | None = None
         # 原始输入的深度数据数组
         self._x_data = None
+        # 边界条件设置
+        self._boundary_conditions: dict | None = None
+
+    def _apply_odd_symmetric_mirror(self, x: np.ndarray, y_m: np.ndarray,
+                                     bc: dict, n_mirror: int = 5) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        对数据应用奇对称镜像增强以施加边界条件
+
+        奇对称镜像原理：
+        - 对于边界点 (x₀, y₀)，将数据点 (xᵢ, yᵢ) 镜像为 (2x₀-xᵢ, 2y₀-yᵢ)
+        - 这使得拟合曲线过 (x₀, y₀) 且在该点二阶导数为 0
+
+        Args:
+            x: 深度数组 (m)，已排序
+            y_m: 位移数组 (m)
+            bc: 边界条件字典
+            n_mirror: 镜像点数量，默认5
+
+        Returns:
+            (x_augmented, y_augmented): 增强后的排序去重数据
+        """
+        result_x = list(x)
+        result_y = list(y_m)
+
+        # 处理桩顶边界条件
+        if bc.get('top_enabled'):
+            top_depth = bc['top_depth']
+            top_disp_m = bc['top_disp'] / 1000.0
+
+            # 取靠近桩顶的 n_mirror 个点
+            n_top = min(n_mirror, len(x))
+            x_head = x[:n_top]
+            y_head = y_m[:n_top]
+
+            # 生成关于 (top_depth, top_disp_m) 的奇对称镜像
+            x_mirror = 2 * top_depth - x_head[::-1]
+            y_mirror = 2 * top_disp_m - y_head[::-1]
+
+            # 添加镜像点和边界点
+            result_x = list(x_mirror) + [top_depth] + result_x
+            result_y = list(y_mirror) + [top_disp_m] + result_y
+
+        # 处理桩底边界条件
+        if bc.get('bottom_enabled'):
+            bottom_depth = bc['bottom_depth']
+            bottom_disp_m = bc['bottom_disp'] / 1000.0
+
+            # 取靠近桩底的 n_mirror 个点
+            n_bottom = min(n_mirror, len(x))
+            x_tail = x[-n_bottom:]
+            y_tail = y_m[-n_bottom:]
+
+            # 生成关于 (bottom_depth, bottom_disp_m) 的奇对称镜像
+            x_mirror = 2 * bottom_depth - x_tail[::-1]
+            y_mirror = 2 * bottom_disp_m - y_tail[::-1]
+
+            # 添加边界点和镜像点
+            result_x = result_x + [bottom_depth] + list(x_mirror)
+            result_y = result_y + [bottom_disp_m] + list(y_mirror)
+
+        # 转换为数组并排序去重
+        x_aug = np.array(result_x)
+        y_aug = np.array(result_y)
+        sort_idx = np.argsort(x_aug)
+        x_sorted = x_aug[sort_idx]
+        y_sorted = y_aug[sort_idx]
+
+        # 去除重复点（容差 1e-10）
+        unique_mask = np.diff(x_sorted, prepend=-np.inf) > 1e-10
+        return x_sorted[unique_mask], y_sorted[unique_mask]
 
     def set_parameters(self, E_val: float, E_unit: str, section_type: str, dims: dict):
         """
@@ -102,7 +172,8 @@ class PileSolver:
         self.I_m4 = utils.compute_inertia(section_type, dims)
 
     def fit_data(self, x_depths, y_disps_mm, degree: int = 5,
-                 algo_type: str = "polynomial", sigma_mm: float = 0.5):
+                 algo_type: str = "polynomial", sigma_mm: float = 0.5,
+                 boundary_conditions: dict = None):
         """
         执行数据拟合
 
@@ -116,6 +187,13 @@ class PileSolver:
             sigma_mm (float): 测斜仪预估误差，单位为毫米（仅样条模式使用）
                 - 默认值 0.5mm
                 - 平滑因子 s = N × σ²
+            boundary_conditions (dict): 边界条件设置，包含：
+                - top_enabled: 是否启用桩顶边界条件
+                - top_depth: 桩顶深度 (m)
+                - top_disp: 桩顶位移 (mm)
+                - bottom_enabled: 是否启用桩底边界条件
+                - bottom_depth: 桩底深度 (m)
+                - bottom_disp: 桩底位移 (mm)
 
         Raises:
             ValueError: 当数据点少于 2 个时抛出
@@ -124,6 +202,7 @@ class PileSolver:
             - 内部将位移从 mm 转换为 m 进行计算
             - 多项式模式：自动限制阶数不超过数据点数-1
             - 样条模式：s = N × σ²，其中 N 为数据点数，σ 为误差（单位：米）
+            - 启用边界条件时，使用奇对称镜像法强制曲线满足边界约束
         """
         # 将输入数据转换为 numpy 数组，确保数据类型为 float
         x = np.asarray(x_depths, dtype=float)
@@ -134,8 +213,14 @@ class PileSolver:
         if x.size < 2:
             raise ValueError("至少需要两组数据点用于拟合")
 
-        # 保存算法类型
+        # 保存算法类型和边界条件
         self.algo_type = algo_type
+        self._boundary_conditions = boundary_conditions
+
+        # 检查是否需要应用边界条件
+        use_bc = (boundary_conditions is not None and
+                  (boundary_conditions.get('top_enabled') or
+                   boundary_conditions.get('bottom_enabled')))
 
         if algo_type == "polynomial":
             # ===== 多项式拟合 =====
@@ -168,20 +253,26 @@ class PileSolver:
             sigma_m = sigma_mm / 1000.0
             s = len(y_m) * (sigma_m ** 2)
 
-            # 创建三次样条，k=3 表示三次样条
-            # 需要确保 x 是递增的
+            # 先对原始数据排序
             sort_idx = np.argsort(x)
             x_sorted = x[sort_idx]
             y_sorted = y_m[sort_idx]
 
-            self.spline = UnivariateSpline(x_sorted, y_sorted, k=3, s=s)
+            # 应用边界条件镜像（如果启用）
+            if use_bc:
+                x_fit, y_fit = self._apply_odd_symmetric_mirror(x_sorted, y_sorted, boundary_conditions)
+            else:
+                x_fit, y_fit = x_sorted, y_sorted
+
+            # 创建三次样条，k=3 表示三次样条
+            self.spline = UnivariateSpline(x_fit, y_fit, k=3, s=s)
 
             # 清除多项式相关对象
             self.poly = None
             self.poly_coeffs = None
             self.poly_second = None
 
-            # 计算拟合值
+            # 计算拟合值（使用原始数据点）
             y_fit_m = self.spline(x)
 
         else:
@@ -196,26 +287,41 @@ class PileSolver:
             sigma_m = sigma_mm / 1000.0
             s = len(y_m) * (sigma_m ** 2)
 
-            # 需要确保 x 是递增的
+            # 先对原始数据排序
             sort_idx = np.argsort(x)
             x_sorted = x[sort_idx]
             y_sorted = y_m[sort_idx]
 
+            # 应用边界条件镜像（如果启用）
+            if use_bc:
+                x_fit, y_fit = self._apply_odd_symmetric_mirror(x_sorted, y_sorted, boundary_conditions)
+            else:
+                x_fit, y_fit = x_sorted, y_sorted
+
             # 创建五次样条，k=5 表示五次样条
-            self.spline = UnivariateSpline(x_sorted, y_sorted, k=5, s=s)
+            self.spline = UnivariateSpline(x_fit, y_fit, k=5, s=s)
 
             # 清除多项式相关对象
             self.poly = None
             self.poly_coeffs = None
             self.poly_second = None
 
-            # 计算拟合值
+            # 计算拟合值（使用原始数据点）
             y_fit_m = self.spline(x)
 
         # 保存原始数据用于统计计算
         self._x_data = x
+
         # 记录数据深度范围，用于生成绘图数据
-        self._x_range = (float(x.min()), float(x.max()))
+        # 如果启用了边界条件，扩展范围到边界点
+        x_min = float(x.min())
+        x_max = float(x.max())
+        if use_bc:
+            if boundary_conditions.get('top_enabled'):
+                x_min = min(x_min, boundary_conditions['top_depth'])
+            if boundary_conditions.get('bottom_enabled'):
+                x_max = max(x_max, boundary_conditions['bottom_depth'])
+        self._x_range = (x_min, x_max)
 
         # 计算拟合统计信息
         # 1. 计算残差平方和 (Sum of Squares of Residuals)
@@ -467,7 +573,8 @@ class PileSolver:
     def find_optimal_sigma(self, x_depths, y_disps_mm,
                            algo_type: str = "spline",
                            sigma_range: tuple = (0.001, 1.0),
-                           n_candidates: int = 30) -> float:
+                           n_candidates: int = 30,
+                           boundary_conditions: dict = None) -> float:
         """
         使用留一法交叉验证 (Leave-One-Out Cross-Validation, LOOCV) 自动选择最优 σ
 
@@ -508,6 +615,7 @@ class PileSolver:
             n_candidates (int): 候选 σ 数量，默认 30
                 - 增加此值可提高精度但会增加计算时间
                 - 计算复杂度为 O(n_candidates × N²)
+            boundary_conditions (dict): 边界条件设置，可选
 
         Returns:
             float: 最优 σ 值，单位为毫米 (mm)
@@ -534,14 +642,16 @@ class PileSolver:
 
         for sigma in sigmas:
             cv_error = self._compute_loocv_error(x_depths, y_disps_mm,
-                                                  sigma, algo_type)
+                                                  sigma, algo_type,
+                                                  boundary_conditions)
             if cv_error < best_cv_error:
                 best_cv_error = cv_error
                 best_sigma = sigma
 
         return float(best_sigma)
 
-    def _compute_loocv_error(self, x, y_mm, sigma_mm: float, algo_type: str) -> float:
+    def _compute_loocv_error(self, x, y_mm, sigma_mm: float, algo_type: str,
+                             boundary_conditions: dict = None) -> float:
         """
         计算单个 σ 值的留一法交叉验证误差
 
@@ -566,6 +676,7 @@ class PileSolver:
             y_mm: 位移数据数组，单位为毫米
             sigma_mm (float): 预估测量误差 σ，单位为毫米
             algo_type (str): 算法类型，'spline' (k=3) 或 'spline5' (k=5)
+            boundary_conditions (dict): 边界条件设置，可选
 
         Returns:
             float: 交叉验证均方根误差 (CV-RMSE)，单位为毫米
@@ -575,6 +686,7 @@ class PileSolver:
             - 内部计算使用米为单位（与拟合算法一致）
             - 样条拟合要求 x 递增，因此每次都进行排序
             - k 阶样条至少需要 k+1 个数据点
+            - 如果启用边界条件，训练集会应用镜像增强
         """
         from scipy.interpolate import UnivariateSpline
 
@@ -589,6 +701,11 @@ class PileSolver:
         if n <= k + 1:
             return float('inf')
 
+        # 检查是否需要应用边界条件
+        use_bc = (boundary_conditions is not None and
+                  (boundary_conditions.get('top_enabled') or
+                   boundary_conditions.get('bottom_enabled')))
+
         errors = []
         for i in range(n):
             # 移除第 i 个点，构建训练集
@@ -600,10 +717,16 @@ class PileSolver:
             x_sorted = x_train[sort_idx]
             y_sorted = y_train[sort_idx]
 
+            # 应用边界条件镜像（如果启用）
+            if use_bc:
+                x_fit, y_fit = self._apply_odd_symmetric_mirror(x_sorted, y_sorted, boundary_conditions)
+            else:
+                x_fit, y_fit = x_sorted, y_sorted
+
             try:
                 # 用 N-1 个点拟合，相应调整平滑因子
                 s_train = (n - 1) * (sigma_m ** 2)
-                spline = UnivariateSpline(x_sorted, y_sorted, k=k, s=s_train)
+                spline = UnivariateSpline(x_fit, y_fit, k=k, s=s_train)
 
                 # 预测被移除的点
                 y_pred = spline(x[i])

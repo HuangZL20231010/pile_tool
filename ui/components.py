@@ -55,10 +55,74 @@ class DataInputGroup(QtWidgets.QGroupBox):
         button_layout.addWidget(self.import_button)
         button_layout.addStretch(1)  # 添加弹性空间，将按钮推到左侧
 
+        # ===== 边界条件设置 =====
+        # 复选框样式：蓝色边框
+        checkbox_style = """
+            QCheckBox::indicator {
+                border: 2px solid #3b82f6;
+                border-radius: 3px;
+                width: 14px;
+                height: 14px;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #3b82f6;
+                border: 2px solid #3b82f6;
+            }
+        """
+
+        # 桩顶边界条件行
+        self.top_bc_checkbox = QtWidgets.QCheckBox("设置桩顶")
+        self.top_bc_checkbox.setStyleSheet(checkbox_style)
+        self.top_depth_input = QtWidgets.QLineEdit("0")
+        self.top_depth_input.setFixedWidth(60)
+        self.top_depth_input.setEnabled(False)
+        self.top_disp_input = QtWidgets.QLineEdit("0")
+        self.top_disp_input.setFixedWidth(60)
+        self.top_disp_input.setEnabled(False)
+
+        top_bc_layout = QtWidgets.QHBoxLayout()
+        top_bc_layout.addWidget(self.top_bc_checkbox)
+        top_bc_layout.addWidget(QtWidgets.QLabel("深度:"))
+        top_bc_layout.addWidget(self.top_depth_input)
+        # top_bc_layout.addWidget(QtWidgets.QLabel("m"))
+        top_bc_layout.addSpacing(10)
+        top_bc_layout.addWidget(QtWidgets.QLabel("位移:"))
+        top_bc_layout.addWidget(self.top_disp_input)
+        # top_bc_layout.addWidget(QtWidgets.QLabel("mm"))
+        top_bc_layout.addStretch(1)
+
+        # 桩底边界条件行
+        self.bottom_bc_checkbox = QtWidgets.QCheckBox("设置桩底")
+        self.bottom_bc_checkbox.setStyleSheet(checkbox_style)
+        self.bottom_depth_input = QtWidgets.QLineEdit()
+        self.bottom_depth_input.setFixedWidth(60)
+        self.bottom_depth_input.setPlaceholderText("m")
+        self.bottom_depth_input.setEnabled(False)
+        self.bottom_disp_input = QtWidgets.QLineEdit("0")
+        self.bottom_disp_input.setFixedWidth(60)
+        self.bottom_disp_input.setEnabled(False)
+
+        bottom_bc_layout = QtWidgets.QHBoxLayout()
+        bottom_bc_layout.addWidget(self.bottom_bc_checkbox)
+        bottom_bc_layout.addWidget(QtWidgets.QLabel("深度:"))
+        bottom_bc_layout.addWidget(self.bottom_depth_input)
+        # bottom_bc_layout.addWidget(QtWidgets.QLabel("m"))
+        bottom_bc_layout.addSpacing(10)
+        bottom_bc_layout.addWidget(QtWidgets.QLabel("位移:"))
+        bottom_bc_layout.addWidget(self.bottom_disp_input)
+        # bottom_bc_layout.addWidget(QtWidgets.QLabel("mm"))
+        bottom_bc_layout.addStretch(1)
+
+        # 连接复选框信号
+        self.top_bc_checkbox.toggled.connect(self._on_top_bc_toggled)
+        self.bottom_bc_checkbox.toggled.connect(self._on_bottom_bc_toggled)
+
         # 设置垂直布局
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.text_edit)
         layout.addLayout(button_layout)
+        layout.addLayout(top_bc_layout)
+        layout.addLayout(bottom_bc_layout)
         self.setLayout(layout)
 
     def on_import_button_clicked(self):
@@ -129,6 +193,76 @@ class DataInputGroup(QtWidgets.QGroupBox):
         for depth, disp in zip(depths, disps):
             lines.append(f"{depth}\t{disp}")
         return "\n".join(lines)
+
+    def _on_top_bc_toggled(self, checked: bool):
+        """
+        桩顶边界条件复选框切换处理
+
+        Args:
+            checked: 是否选中
+        """
+        self.top_depth_input.setEnabled(checked)
+        self.top_disp_input.setEnabled(checked)
+        # 取消桩顶时，自动取消桩底
+        if not checked and self.bottom_bc_checkbox.isChecked():
+            self.bottom_bc_checkbox.setChecked(False)
+
+    def _on_bottom_bc_toggled(self, checked: bool):
+        """
+        桩底边界条件复选框切换处理
+
+        Args:
+            checked: 是否选中
+        """
+        self.bottom_depth_input.setEnabled(checked)
+        self.bottom_disp_input.setEnabled(checked)
+        # 选中桩底时，自动选中桩顶
+        if checked and not self.top_bc_checkbox.isChecked():
+            self.top_bc_checkbox.setChecked(True)
+
+    def get_boundary_conditions(self) -> dict:
+        """
+        获取边界条件设置
+
+        Returns:
+            dict: 边界条件字典，包含：
+                - top_enabled: 是否启用桩顶边界条件
+                - top_depth: 桩顶深度 (m)
+                - top_disp: 桩顶位移 (mm)
+                - bottom_enabled: 是否启用桩底边界条件
+                - bottom_depth: 桩底深度 (m)
+                - bottom_disp: 桩底位移 (mm)
+        """
+        result = {
+            'top_enabled': self.top_bc_checkbox.isChecked(),
+            'top_depth': 0.0,
+            'top_disp': 0.0,
+            'bottom_enabled': self.bottom_bc_checkbox.isChecked(),
+            'bottom_depth': 0.0,
+            'bottom_disp': 0.0,
+        }
+
+        if result['top_enabled']:
+            try:
+                result['top_depth'] = float(self.top_depth_input.text())
+            except ValueError:
+                result['top_depth'] = 0.0
+            try:
+                result['top_disp'] = float(self.top_disp_input.text())
+            except ValueError:
+                result['top_disp'] = 0.0
+
+        if result['bottom_enabled']:
+            try:
+                result['bottom_depth'] = float(self.bottom_depth_input.text())
+            except ValueError:
+                result['bottom_depth'] = 0.0
+            try:
+                result['bottom_disp'] = float(self.bottom_disp_input.text())
+            except ValueError:
+                result['bottom_disp'] = 0.0
+
+        return result
 
 
 class ParamsGroup(QtWidgets.QGroupBox):
@@ -339,9 +473,9 @@ class FitControlGroup(QtWidgets.QGroupBox):
             self.auto_btn.setVisible(False)
             self.algo_changed.emit("polynomial")
         elif self.spline_radio.isChecked():
-            # 切换到三次样条模式（滑块 0-1000 对应 0.000mm-1.000mm）
+            # 切换到三次样条模式（滑块 0-2500 对应 0.000mm-2.500mm）
             self.slider.setMinimum(0)
-            self.slider.setMaximum(1000)
+            self.slider.setMaximum(2500)
             self.slider.setValue(500)  # 默认 0.500mm
             self.label.setText("预估误差 σ: 0.500 mm")
             self.s_label.setVisible(True)
@@ -350,9 +484,9 @@ class FitControlGroup(QtWidgets.QGroupBox):
             self.auto_btn.setVisible(True)
             self.algo_changed.emit("spline")
         else:
-            # 切换到五次样条模式
+            # 切换到五次样条模式（滑块 0-2500 对应 0.000mm-2.500mm）
             self.slider.setMinimum(0)
-            self.slider.setMaximum(1000)
+            self.slider.setMaximum(2500)
             self.slider.setValue(500)  # 默认 0.500mm
             self.label.setText("预估误差 σ: 0.500 mm")
             self.s_label.setVisible(True)
@@ -427,33 +561,6 @@ class FitControlGroup(QtWidgets.QGroupBox):
         slider_val = int(sigma_mm * 1000)
         slider_val = max(0, min(self.slider.maximum(), slider_val))
         self.slider.setValue(slider_val)
-
-    def adjust_slider_range_by_n(self, n_points: int):
-        """
-        根据数据点数量自动调整滑块的最大值
-
-        数据点越多，允许的 σ 范围越大：
-        - N < 30: 最大 1.000mm
-        - 30 ≤ N < 40: 最大 2.000mm
-        - N ≥ 40: 最大 3.000mm
-
-        Args:
-            n_points (int): 数据点数量
-
-        Returns:
-            float: 调整后的最大 σ 值 (mm)
-        """
-        if n_points < 30:
-            max_sigma = 1.0
-        elif n_points < 40:
-            max_sigma = 2.0
-        else:
-            max_sigma = 3.0
-
-        # 更新滑块最大值（滑块值 = σ_mm × 1000）
-        self.slider.setMaximum(int(max_sigma * 1000))
-
-        return max_sigma
 
 
 class QueryGroup(QtWidgets.QGroupBox):
