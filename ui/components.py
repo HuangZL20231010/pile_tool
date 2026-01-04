@@ -21,6 +21,8 @@ class DataInputGroup(QtWidgets.QGroupBox):
     提供多行文本框让用户输入或粘贴深度和位移数据。
     支持从Excel等工具复制的数据格式。
     """
+    # 数据变化信号，当文本框内容变化时发出
+    data_changed = QtCore.pyqtSignal()
 
     def __init__(self, parent=None):
         """
@@ -116,6 +118,9 @@ class DataInputGroup(QtWidgets.QGroupBox):
         # 连接复选框信号
         self.top_bc_checkbox.toggled.connect(self._on_top_bc_toggled)
         self.bottom_bc_checkbox.toggled.connect(self._on_bottom_bc_toggled)
+
+        # 连接文本变化信号
+        self.text_edit.textChanged.connect(self.data_changed)
 
         # 设置垂直布局
         layout = QtWidgets.QVBoxLayout()
@@ -561,6 +566,37 @@ class FitControlGroup(QtWidgets.QGroupBox):
         slider_val = int(sigma_mm * 1000)
         slider_val = max(0, min(self.slider.maximum(), slider_val))
         self.slider.setValue(slider_val)
+
+    def update_sigma_max(self, n_points: int):
+        """
+        根据数据点数量更新 σ 滑块最大值
+
+        Args:
+            n_points (int): 数据点数量
+
+        规则：
+            - 点数 ≤ 40：最大值 2.5mm
+            - 点数 > 40 且 ≤ 60：最大值 4mm
+            - 点数 > 60：最大值 8mm
+        """
+        # 仅在样条模式下生效
+        if self.poly_radio.isChecked():
+            return
+
+        # 根据点数确定最大值
+        if n_points > 60:
+            max_mm = 8.0
+        elif n_points > 40:
+            max_mm = 4.0
+        else:
+            max_mm = 2.5
+
+        max_val = int(max_mm * 1000)  # 转换为滑块单位
+
+        # 保持当前值不变（若超出则限制到新最大值）
+        current_val = min(self.slider.value(), max_val)
+        self.slider.setMaximum(max_val)
+        self.slider.setValue(current_val)
 
 
 class QueryGroup(QtWidgets.QGroupBox):

@@ -18,11 +18,13 @@ pip install -r requirements.txt
 
 ### 运行程序
 ```bash
+conda activate pile_tool
 python main.py
 ```
 
 ### 打包发布
 ```bash
+conda activate pile_tool
 pyinstaller --noconsole --onefile --name PileBackAnalysis main.py
 ```
 
@@ -72,7 +74,7 @@ pile_tool/
 - `MainWindow` - 主窗口，左右分栏布局（左侧面板支持滚动）
 - `DataInputGroup` - 数据输入（文本框/文件导入/边界条件设置）
 - `ParamsGroup` - 材料和截面参数
-- `FitControlGroup` - 算法选择和参数控制（σ 范围固定 0~2.5mm）
+- `FitControlGroup` - 算法选择和参数控制（σ 范围动态调整）
 - `QueryGroup` - 单点查询
 - `StatsBar` - 统计信息栏
 - `PlotCanvas` - Matplotlib 四图联动画布
@@ -88,6 +90,12 @@ query_group.query_clicked -> on_query_clicked()
 
 # 自动选择 σ
 fit_group.auto_sigma_requested -> on_auto_sigma_clicked()
+
+# 数据变化时更新 σ 滑块范围
+data_group.data_changed -> on_data_changed()
+
+# 算法切换时更新 σ 滑块范围
+fit_group.algo_changed -> _on_algo_type_changed()
 ```
 
 ## 关键算法
@@ -108,7 +116,10 @@ s = N × σ²
 4. 选择使 CV-RMSE 最小的 σ
 
 ### σ 参数范围
-σ 滑块范围固定为 0 ~ 2.500 mm。
+σ 滑块范围根据数据点数量动态调整：
+- 点数 ≤ 40：最大 2.5mm
+- 点数 > 40 且 ≤ 60：最大 4mm
+- 点数 > 60：最大 8mm
 
 ### 边界条件（奇对称镜像法）
 用于强制样条曲线满足物理边界条件：

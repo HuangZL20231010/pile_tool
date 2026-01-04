@@ -36,6 +36,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # 设置窗口标题和初始尺寸
         self.setWindowTitle("围护桩反分析工具 - PileBackAnalysis")
         self.resize(1200, 720)
+        # 启动时最大化窗口
+        self.showMaximized()
 
         # 应用浅色科技风主题
         self._apply_theme()
@@ -156,6 +158,8 @@ class MainWindow(QtWidgets.QMainWindow):
         - 计算按钮点击 -> 执行拟合计算
         - 查询按钮点击 -> 执行单点查询
         - 自动按钮点击 -> 自动选择最优 σ
+        - 数据变化 -> 更新 σ 滑块范围
+        - 算法变化 -> 更新 σ 滑块范围
         """
         # 连接计算按钮的点击信号到计算处理函数
         self.fit_group.calc_button.clicked.connect(self.on_calculate_clicked)
@@ -163,6 +167,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.query_group.query_clicked.connect(self.on_query_clicked)
         # 连接自动选择 σ 信号到处理函数
         self.fit_group.auto_sigma_requested.connect(self.on_auto_sigma_clicked)
+        # 连接数据变化信号到滑块范围更新
+        self.data_group.data_changed.connect(self.on_data_changed)
+        # 连接算法变化信号到滑块范围更新
+        self.fit_group.algo_changed.connect(self._on_algo_type_changed)
 
     def keyPressEvent(self, event):
         """
@@ -711,4 +719,37 @@ class MainWindow(QtWidgets.QMainWindow):
             self.fit_group.auto_btn.setEnabled(True)
             self.fit_group.auto_btn.setText("自动")
             QtWidgets.QMessageBox.warning(self, "错误", str(exc))
+
+    def on_data_changed(self):
+        """
+        数据输入变化时更新 σ 滑块范围
+
+        根据数据点数量动态调整预估误差滑块的最大值：
+        - 点数 ≤ 40：最大值 2.5mm
+        - 点数 > 40 且 ≤ 60：最大值 4mm
+        - 点数 > 60：最大值 8mm
+        """
+        # 仅在样条模式下生效
+        if self.fit_group.get_algo_type() not in ('spline', 'spline5'):
+            return
+
+        raw_text = self.data_group.text_edit.toPlainText()
+        try:
+            depths, _ = utils.parse_depth_disp(raw_text)
+            self.fit_group.update_sigma_max(len(depths))
+        except Exception:
+            # 解析失败时忽略（用户正在输入中）
+            pass
+
+    def _on_algo_type_changed(self, algo_type: str):
+        """
+        算法类型变化时刷新滑块范围
+
+        当用户切换到样条模式时，根据当前数据点数量设置正确的滑块最大值。
+
+        Args:
+            algo_type (str): 新的算法类型，'polynomial'、'spline' 或 'spline5'
+        """
+        if algo_type in ('spline', 'spline5'):
+            self.on_data_changed()
 
