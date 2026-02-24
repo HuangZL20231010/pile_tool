@@ -631,7 +631,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         自动选择最优 σ 按钮点击处理函数
 
-        使用留一法交叉验证自动找到最优的预估误差 σ：
+        使用 L-curve 法自动找到最优的预估误差 σ：
         1. 解析输入数据
         2. 根据数据点数调整滑块范围
         3. 调用求解器的 find_optimal_sigma 方法
@@ -676,7 +676,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QApplication.processEvents()
 
             # ===== 步骤5: 调用求解器找最优 σ =====
-            n_candidates = 30
+            n_candidates = 50
             optimal_sigma = self.solver.find_optimal_sigma(
                 depths, disps,
                 algo_type=algo_type,
@@ -701,14 +701,13 @@ class MainWindow(QtWidgets.QMainWindow):
             # 构建详细的计算过程说明
             algo_name = "三次样条" if algo_type == "spline" else "五次样条"
             k_value = 3 if algo_type == "spline" else 5
-            n_fits = n_candidates * len(depths)
 
             process_msg = (
-                f"══════ 留一法交叉验证 (LOOCV) ══════\n\n"
+                f"════════ L-curve 法 ════════\n\n"
                 f"【算法】{algo_name} (k={k_value})\n"
                 f"【数据】N = {len(depths)} 个测点\n"
                 f"【搜索】{n_candidates} 个候选 σ（0.001~{max_sigma:.1f}mm）\n"
-                f"【计算】共进行 {n_fits} 次样条拟合\n\n"
+                f"【计算】共进行 {n_candidates} 次样条拟合\n\n"
                 f"══════════ 计算结果 ══════════\n\n"
                 f"【最优 σ】{optimal_sigma:.4f} mm\n"
                 f"【平滑因子】s = N × σ² = {s_percent:.6f}%\n\n"
