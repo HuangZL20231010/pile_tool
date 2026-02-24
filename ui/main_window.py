@@ -658,8 +658,14 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
                 return
 
-            # ===== 步骤2: 设置固定 σ 搜索范围 =====
-            max_sigma = 2.5  # 固定最大值
+            # ===== 步骤2: 根据数据点数量设置 σ 搜索范围 =====
+            n_pts = len(depths)
+            if n_pts > 60:
+                max_sigma = 8.0
+            elif n_pts > 40:
+                max_sigma = 4.0
+            else:
+                max_sigma = 2.5
 
             # ===== 步骤3: 获取边界条件 =====
             bc = self.data_group.get_boundary_conditions()
