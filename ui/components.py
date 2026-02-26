@@ -388,6 +388,7 @@ class FitControlGroup(QtWidgets.QGroupBox):
         self.poly_radio = QtWidgets.QRadioButton("多项式拟合")
         self.spline_radio = QtWidgets.QRadioButton("三次样条")
         self.spline5_radio = QtWidgets.QRadioButton("五次样条")
+        self.mao_radio = QtWidgets.QRadioButton("论文样条")
         self.poly_radio.setChecked(True)  # 默认选中多项式
 
         # 创建按钮组确保单选行为
@@ -395,12 +396,21 @@ class FitControlGroup(QtWidgets.QGroupBox):
         self.algo_group.addButton(self.poly_radio)
         self.algo_group.addButton(self.spline_radio)
         self.algo_group.addButton(self.spline5_radio)
+        self.algo_group.addButton(self.mao_radio)
 
-        # 算法选择水平布局
-        algo_layout = QtWidgets.QHBoxLayout()
-        algo_layout.addWidget(self.poly_radio)
-        algo_layout.addWidget(self.spline_radio)
-        algo_layout.addWidget(self.spline5_radio)
+        # 算法选择布局（两行）
+        algo_row1 = QtWidgets.QHBoxLayout()
+        algo_row1.addWidget(self.poly_radio)
+        algo_row1.addWidget(self.spline_radio)
+        algo_row1.addWidget(self.spline5_radio)
+
+        algo_row2 = QtWidgets.QHBoxLayout()
+        algo_row2.addWidget(self.mao_radio)
+        algo_row2.addStretch(1)
+
+        algo_layout = QtWidgets.QVBoxLayout()
+        algo_layout.addLayout(algo_row1)
+        algo_layout.addLayout(algo_row2)
 
         # ===== 参数滑块 =====
         # 创建水平滑块用于调节参数
@@ -455,6 +465,7 @@ class FitControlGroup(QtWidgets.QGroupBox):
         self.poly_radio.toggled.connect(self._on_algo_changed)
         self.spline_radio.toggled.connect(self._on_algo_changed)
         self.spline5_radio.toggled.connect(self._on_algo_changed)
+        self.mao_radio.toggled.connect(self._on_algo_changed)
 
     def _on_algo_changed(self, checked: bool):
         """
@@ -486,9 +497,10 @@ class FitControlGroup(QtWidgets.QGroupBox):
             self.s_label.setVisible(True)
             self.s_label.setText("平滑因子 s: -")
             self.formula_label.setVisible(True)
+            self.formula_label.setText("公式: s = N × σ²")
             self.auto_btn.setVisible(True)
             self.algo_changed.emit("spline")
-        else:
+        elif self.spline5_radio.isChecked():
             # 切换到五次样条模式（滑块 0-2500 对应 0.000mm-2.500mm）
             self.slider.setMinimum(0)
             self.slider.setMaximum(2500)
@@ -497,8 +509,21 @@ class FitControlGroup(QtWidgets.QGroupBox):
             self.s_label.setVisible(True)
             self.s_label.setText("平滑因子 s: -")
             self.formula_label.setVisible(True)
+            self.formula_label.setText("公式: s = N × σ²")
             self.auto_btn.setVisible(True)
             self.algo_changed.emit("spline5")
+        elif self.mao_radio.isChecked():
+            # 切换到论文样条模式（滑块 0-2500 对应 0.000mm-2.500mm）
+            self.slider.setMinimum(0)
+            self.slider.setMaximum(2500)
+            self.slider.setValue(500)  # 默认 0.500mm
+            self.label.setText("误差限 δ: 0.500 mm")
+            self.s_label.setVisible(True)
+            self.s_label.setText("逐点误差控制: |Dᵢ| ≤ δ")
+            self.formula_label.setVisible(True)
+            self.formula_label.setText("公式: min ∫y''²dx, s.t. |yᵢ-ŷᵢ| ≤ δ")
+            self.auto_btn.setVisible(True)
+            self.algo_changed.emit("mao_spline")
 
     def _update_label(self, val: int):
         """
@@ -511,6 +536,10 @@ class FitControlGroup(QtWidgets.QGroupBox):
         """
         if self.poly_radio.isChecked():
             self.label.setText(f"阶数: {val}")
+        elif self.mao_radio.isChecked():
+            # 论文样条模式：滑块值除以1000显示为 δ (mm)
+            delta = val / 1000.0
+            self.label.setText(f"误差限 δ: {delta:.3f} mm")
         else:
             # 样条模式：滑块值除以1000显示为 σ (mm)
             sigma = val / 1000.0
@@ -523,14 +552,16 @@ class FitControlGroup(QtWidgets.QGroupBox):
         获取当前选中的算法类型
 
         Returns:
-            str: "polynomial" 表示多项式，"spline" 表示三次样条，"spline5" 表示五次样条
+            str: "polynomial"、"spline"、"spline5" 或 "mao_spline"
         """
         if self.poly_radio.isChecked():
             return "polynomial"
         elif self.spline_radio.isChecked():
             return "spline"
-        else:
+        elif self.spline5_radio.isChecked():
             return "spline5"
+        else:
+            return "mao_spline"
 
     def get_sigma_value(self) -> float:
         """
@@ -549,11 +580,14 @@ class FitControlGroup(QtWidgets.QGroupBox):
             n_points (int): 数据点数量
         """
         sigma_mm = self.get_sigma_value()
-        sigma_m = sigma_mm / 1000.0  # 转换为米
-        s = n_points * (sigma_m ** 2)
-        # 转换为百分比显示（s * 100）
-        s_percent = s * 100
-        self.s_label.setText(f"平滑因子 s: {s_percent:.6f}%")
+        if self.mao_radio.isChecked():
+            self.s_label.setText(f"误差限 δ = {sigma_mm:.3f} mm (逐点)")
+        else:
+            sigma_m = sigma_mm / 1000.0  # 转换为米
+            s = n_points * (sigma_m ** 2)
+            # 转换为百分比显示（s * 100）
+            s_percent = s * 100
+            self.s_label.setText(f"平滑因子 s: {s_percent:.6f}%")
 
     def set_sigma_value(self, sigma_mm: float):
         """
@@ -803,7 +837,7 @@ class StatsBar(QtWidgets.QWidget):
         self.qmax_label.setText(f"Qmax = {qmax:.2f} kN")
 
         # 更新最大土压力
-        if algo_type == "spline":
+        if algo_type in ("spline", "mao_spline"):
             self.pmax_label.setText("pmax = N/A")
         else:
             self.pmax_label.setText(f"pmax = {pmax:.2f} kPa")
@@ -813,6 +847,8 @@ class StatsBar(QtWidgets.QWidget):
             self.disp_title.setText("位移拟合函数 y(x) - 三次样条")
         elif algo_type == "spline5":
             self.disp_title.setText("位移拟合函数 y(x) - 五次样条")
+        elif algo_type == "mao_spline":
+            self.disp_title.setText("位移拟合函数 y(x) - 论文样条")
         else:
             self.disp_title.setText("位移拟合函数 y(x)")
 

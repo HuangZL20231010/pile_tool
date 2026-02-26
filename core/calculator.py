@@ -80,6 +80,11 @@ class PileSolver:
         self._x_data = None
         # 边界条件设置
         self._boundary_conditions: dict | None = None
+        # 论文样条（毛朝辉2006）相关数据
+        self._mao_x: np.ndarray | None = None
+        self._mao_y_corrected: np.ndarray | None = None
+        self._mao_M: np.ndarray | None = None
+        self._mao_h: np.ndarray | None = None
 
     def _apply_odd_symmetric_mirror(self, x: np.ndarray, y_m: np.ndarray,
                                      bc: dict, n_mirror: int = 5) -> Tuple[np.ndarray, np.ndarray]:
@@ -148,6 +153,167 @@ class PileSolver:
         # 去除重复点（容差 1e-10）
         unique_mask = np.diff(x_sorted, prepend=-np.inf) > 1e-10
         return x_sorted[unique_mask], y_sorted[unique_mask]
+
+    def _solve_mao_spline(self, x: np.ndarray, y_m: np.ndarray,
+                          delta_m: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        论文光顺三次样条算法（毛朝辉2006，公式3.15-3.21）
+
+        使用逐点权因子 ρ_i 和五对角矩阵方程组，通过直接迭代
+        ρ_i^(k+1) = δ/|D_i^(k)| 使得逐点偏差 |ρ_i·D_i| ≤ δ。
+
+        Args:
+            x: 深度数组 (m)，已排序，N 个点
+            y_m: 位移数组 (m)
+            delta_m: 允许的最大逐点偏差 δ (m)
+
+        Returns:
+            (y_corrected, M, h):
+                y_corrected: 光顺后的位移值 (m)
+                M: 各节点的二阶导数 (1/m)
+                h: 间距数组
+        """
+        from scipy.linalg import solve_banded
+
+        N = len(x)
+        h = np.diff(x)  # h[i] = x[i+1] - x[i], 长度 N-1
+
+        # 右端向量 g（不依赖 ρ），内部节点 i=1,...,N-2
+        g = np.zeros(N - 2)
+        for i in range(1, N - 1):
+            g[i - 1] = (y_m[i + 1] - y_m[i]) / h[i] - (y_m[i] - y_m[i - 1]) / h[i - 1]
+
+        # 初始化逐点权因子 ρ_i, i=0,...,N-1
+        rho = np.ones(N)
+
+        m = N - 2  # 内部未知量个数 (M_1,...,M_{N-2})
+        max_iter = 100
+
+        for iteration in range(max_iter):
+            # 构建 (N-2)×(N-2) 五对角方程组
+            # solve_banded((2,2), ab, rhs)，ab 为 5×m 矩阵
+            ab = np.zeros((5, m))
+
+            for r in range(m):
+                i = r + 1  # 原始索引
+
+                # 主对角线 a_i
+                ab[2, r] = ((h[i - 1] + h[i]) / 3.0
+                            + rho[i - 1] / h[i - 1]**2
+                            + rho[i] * (1.0 / h[i - 1] + 1.0 / h[i])**2
+                            + rho[i + 1] / h[i]**2)
+
+                # 上1对角线 b_i (r -> r+1)
+                if r < m - 1:
+                    ab[1, r + 1] = (h[i] / 6.0
+                                    - (1.0 / h[i]) * ((1.0 / h[i - 1] + 1.0 / h[i]) * rho[i]
+                                                       + (1.0 / h[i] + 1.0 / h[i + 1]) * rho[i + 1]))
+
+                # 上2对角线 c_i (r -> r+2)
+                if r < m - 2:
+                    ab[0, r + 2] = rho[i + 1] / (h[i] * h[i + 1])
+
+                # 下1对角线 = b_r（对称）
+                if r > 0:
+                    j = r  # 对应 b_{r} 即 b_{(r-1)+1} = b_i where i=r
+                    i_prev = r
+                    ab[3, r - 1] = (h[i_prev] / 6.0
+                                    - (1.0 / h[i_prev]) * ((1.0 / h[i_prev - 1] + 1.0 / h[i_prev]) * rho[i_prev]
+                                                            + (1.0 / h[i_prev] + 1.0 / h[i_prev + 1]) * rho[i_prev + 1]))
+
+                # 下2对角线 = c_{r-1}（对称）
+                if r > 1:
+                    i_prev2 = r - 1
+                    ab[4, r - 2] = rho[i_prev2 + 1] / (h[i_prev2] * h[i_prev2 + 1])
+
+            # 求解 M 内部节点
+            M_inner = solve_banded((2, 2), ab, g)
+
+            # 完整 M 向量（自然样条边界 M_0 = M_{N-1} = 0）
+            M_full = np.zeros(N)
+            M_full[1:-1] = M_inner
+
+            # 计算 D_i（公式 3.19）
+            D = np.zeros(N)
+            D[0] = (M_full[1] - M_full[0]) / h[0]             # = M_1 / h_0
+            for i in range(1, N - 1):
+                D[i] = (M_full[i + 1] - M_full[i]) / h[i] - (M_full[i] - M_full[i - 1]) / h[i - 1]
+            D[N - 1] = -(M_full[N - 1] - M_full[N - 2]) / h[N - 2]  # = M_{N-2} / h_{N-2}
+
+            # 检查收敛：max|ρ_i · D_i| ≤ δ
+            if np.max(np.abs(rho * D)) <= delta_m:
+                break
+
+            # 更新 ρ_i（公式 3.21）
+            for i in range(N):
+                abs_Di = abs(D[i])
+                if abs_Di != 0:
+                    rho[i] = delta_m / abs_Di
+                else:
+                    rho[i] = 0.0
+
+        # 计算光顺后位移（公式 3.18）
+        y_corrected = y_m - rho * D
+
+        return y_corrected, M_full, h
+
+    def _eval_mao_spline(self, x_eval: np.ndarray, deriv: int = 0) -> np.ndarray:
+        """
+        用存储的论文样条数据在任意点求值
+
+        三次样条分段公式：
+        S(x) = Mᵢ(x_{i+1}-x)³/(6hᵢ) + M_{i+1}(x-xᵢ)³/(6hᵢ)
+               + (ŷᵢ - Mᵢhᵢ²/6)(x_{i+1}-x)/hᵢ
+               + (ŷ_{i+1} - M_{i+1}hᵢ²/6)(x-xᵢ)/hᵢ
+
+        Args:
+            x_eval: 求值点数组
+            deriv: 导数阶数 (0,1,2,3)
+
+        Returns:
+            对应阶导数的值数组
+        """
+        x = self._mao_x
+        y = self._mao_y_corrected
+        M = self._mao_M
+        h = self._mao_h
+
+        n = len(x)
+        # 定位区间
+        idx = np.searchsorted(x, x_eval, side='right') - 1
+        idx = np.clip(idx, 0, n - 2)
+
+        hi = h[idx]
+        Mi = M[idx]
+        Mi1 = M[idx + 1]
+        yi = y[idx]
+        yi1 = y[idx + 1]
+
+        dx_right = x[idx + 1] - x_eval  # x_{i+1} - x
+        dx_left = x_eval - x[idx]       # x - xᵢ
+
+        if deriv == 0:
+            # S(x)
+            result = (Mi * dx_right**3 / (6 * hi) +
+                      Mi1 * dx_left**3 / (6 * hi) +
+                      (yi - Mi * hi**2 / 6) * dx_right / hi +
+                      (yi1 - Mi1 * hi**2 / 6) * dx_left / hi)
+        elif deriv == 1:
+            # S'(x)
+            result = (-Mi * dx_right**2 / (2 * hi) +
+                      Mi1 * dx_left**2 / (2 * hi) -
+                      (yi - Mi * hi**2 / 6) / hi +
+                      (yi1 - Mi1 * hi**2 / 6) / hi)
+        elif deriv == 2:
+            # S''(x) = Mᵢ(x_{i+1}-x)/hᵢ + M_{i+1}(x-xᵢ)/hᵢ
+            result = Mi * dx_right / hi + Mi1 * dx_left / hi
+        elif deriv == 3:
+            # S'''(x) = (M_{i+1} - Mᵢ) / hᵢ
+            result = (Mi1 - Mi) / hi
+        else:
+            result = np.zeros_like(x_eval)
+
+        return result
 
     def set_parameters(self, E_val: float, E_unit: str, section_type: str, dims: dict):
         """
@@ -275,7 +441,7 @@ class PileSolver:
             # 计算拟合值（使用原始数据点）
             y_fit_m = self.spline(x)
 
-        else:
+        elif algo_type == "spline5":
             # ===== 五次样条平滑 =====
             from scipy.interpolate import UnivariateSpline
 
@@ -308,6 +474,44 @@ class PileSolver:
 
             # 计算拟合值（使用原始数据点）
             y_fit_m = self.spline(x)
+
+        else:
+            # ===== 论文样条（毛朝辉2006）=====
+            # 逐点误差控制的光顺三次样条
+            if x.size < 4:
+                raise ValueError("论文样条拟合需要至少4个数据点")
+
+            # delta_m: 允许的最大逐点偏差 (m)
+            delta_m = sigma_mm / 1000.0
+
+            # 排序
+            sort_idx = np.argsort(x)
+            x_sorted = x[sort_idx]
+            y_sorted = y_m[sort_idx]
+
+            # 应用边界条件镜像（如果启用）
+            if use_bc:
+                x_fit, y_fit = self._apply_odd_symmetric_mirror(x_sorted, y_sorted, boundary_conditions)
+            else:
+                x_fit, y_fit = x_sorted, y_sorted
+
+            # 求解论文样条
+            y_corrected, M_full, h_arr = self._solve_mao_spline(x_fit, y_fit, delta_m)
+
+            # 存储结果
+            self._mao_x = x_fit
+            self._mao_y_corrected = y_corrected
+            self._mao_M = M_full
+            self._mao_h = h_arr
+
+            # 清除其他拟合对象
+            self.poly = None
+            self.poly_coeffs = None
+            self.poly_second = None
+            self.spline = None
+
+            # 计算拟合值（使用原始数据点）
+            y_fit_m = self._eval_mao_spline(x, deriv=0)
 
         # 保存原始数据用于统计计算
         self._x_data = x
@@ -363,6 +567,9 @@ class PileSolver:
         if self.algo_type == "polynomial":
             if self.poly is None or self.poly_second is None:
                 raise RuntimeError("请先执行拟合")
+        elif self.algo_type == "mao_spline":
+            if self._mao_x is None:
+                raise RuntimeError("请先执行拟合")
         else:
             if self.spline is None:
                 raise RuntimeError("请先执行拟合")
@@ -399,7 +606,7 @@ class PileSolver:
             third_deriv = self.spline.derivative(3)(x_dense)
             # 四阶导数为零（三次样条的三阶导数是分段常数）
             fourth_deriv = np.zeros_like(x_dense)
-        else:
+        elif self.algo_type == "spline5":
             # 五次样条模式
             # 计算拟合位移值（米）
             y_fit_m = self.spline(x_dense)
@@ -409,6 +616,13 @@ class PileSolver:
             third_deriv = self.spline.derivative(3)(x_dense)
             # 计算四阶导数
             fourth_deriv = self.spline.derivative(4)(x_dense)
+        elif self.algo_type == "mao_spline":
+            # 论文样条模式
+            y_fit_m = self._eval_mao_spline(x_dense, deriv=0)
+            curvature = self._eval_mao_spline(x_dense, deriv=2)
+            third_deriv = self._eval_mao_spline(x_dense, deriv=3)
+            # 三次样条四阶导数为0
+            fourth_deriv = np.zeros_like(x_dense)
 
         # 计算弯矩：M = E * I * y'' (kN·m)
         moment = self.E_kpa * self.I_m4 * curvature
@@ -462,7 +676,7 @@ class PileSolver:
             third_deriv = float(self.spline.derivative(3)(x_query))
             # 四阶导数为零
             fourth_deriv = 0.0
-        else:
+        elif self.algo_type == "spline5":
             # 五次样条模式
             if self.spline is None:
                 raise RuntimeError("请先执行拟合")
@@ -474,6 +688,16 @@ class PileSolver:
             third_deriv = float(self.spline.derivative(3)(x_query))
             # 计算四阶导数
             fourth_deriv = float(self.spline.derivative(4)(x_query))
+        elif self.algo_type == "mao_spline":
+            # 论文样条模式
+            if self._mao_x is None:
+                raise RuntimeError("请先执行拟合")
+            x_arr = np.array([x_query])
+            y_m = float(self._eval_mao_spline(x_arr, deriv=0)[0])
+            curvature = float(self._eval_mao_spline(x_arr, deriv=2)[0])
+            third_deriv = float(self._eval_mao_spline(x_arr, deriv=3)[0])
+            # 三次样条四阶导数为0
+            fourth_deriv = 0.0
 
         # 计算指定深度的弯矩（kN·m）：M = E * I * y''
         moment = float(self.E_kpa * self.I_m4 * curvature)
@@ -516,6 +740,11 @@ class PileSolver:
                 return ""
             return "Quintic Smoothing Spline (分段函数)"
 
+        if self.algo_type == "mao_spline":
+            if self._mao_x is None:
+                return ""
+            return "论文光顺样条 (分段函数)"
+
         # 多项式模式
         if self.poly_coeffs is None:
             return ""
@@ -544,9 +773,13 @@ class PileSolver:
             - 多项式模式：表达式已包含 E*I 的缩放系数
         """
         # 样条模式返回固定文本
-        if self.algo_type in ("spline", "spline5"):
-            if self.spline is None:
-                return ""
+        if self.algo_type in ("spline", "spline5", "mao_spline"):
+            if self.algo_type == "mao_spline":
+                if self._mao_x is None:
+                    return ""
+            else:
+                if self.spline is None:
+                    return ""
             return "M(x) = E·I·y''(x) (分段函数)"
 
         # 多项式模式
@@ -613,8 +846,6 @@ class PileSolver:
         Returns:
             float: 最优 σ 值，单位为毫米 (mm)
         """
-        from scipy.interpolate import UnivariateSpline
-
         x = np.asarray(x_depths, dtype=float)
         y_mm = np.asarray(y_disps_mm, dtype=float)
 
@@ -625,7 +856,6 @@ class PileSolver:
         y_m = y_mm / 1000.0
 
         n = len(x)
-        k = 3 if algo_type == "spline" else 5
 
         # 检查是否需要应用边界条件
         use_bc = (boundary_conditions is not None and
@@ -648,26 +878,59 @@ class PileSolver:
         residuals = np.full(n_candidates, np.nan)
         roughnesses = np.full(n_candidates, np.nan)
 
-        for i, sigma_mm_val in enumerate(sigmas):
-            sigma_m = sigma_mm_val / 1000.0
-            s = n * (sigma_m ** 2)
+        if algo_type == "mao_spline":
+            # 论文样条：对每个候选 delta 调用 _solve_mao_spline
+            for i, delta_mm_val in enumerate(sigmas):
+                delta_m = delta_mm_val / 1000.0
+                try:
+                    y_corr, M_full, h_arr = self._solve_mao_spline(x_fit, y_fit, delta_m)
 
-            try:
-                spline = UnivariateSpline(x_fit, y_fit, k=k, s=s)
+                    # 临时存储用于求值
+                    old_x, old_y, old_M, old_h = self._mao_x, self._mao_y_corrected, self._mao_M, self._mao_h
+                    self._mao_x = x_fit
+                    self._mao_y_corrected = y_corr
+                    self._mao_M = M_full
+                    self._mao_h = h_arr
 
-                # 残差：仅在原始数据点上计算
-                y_pred = spline(x)
-                rho = float(np.sum((y_m - y_pred) ** 2))
+                    # 残差：仅在原始数据点上计算
+                    y_pred = self._eval_mao_spline(x, deriv=0)
+                    rho = float(np.sum((y_m - y_pred) ** 2))
 
-                # 粗糙度：∫f''(x)²dx，在原始数据域上数值积分
-                spline_d2 = spline.derivative(n=2)
-                d2_vals = spline_d2(x_fine)
-                eta = float(np.trapz(d2_vals ** 2, x_fine))
+                    # 粗糙度：∫f''(x)²dx
+                    d2_vals = self._eval_mao_spline(x_fine, deriv=2)
+                    eta = float(np.trapz(d2_vals ** 2, x_fine))
 
-                residuals[i] = rho
-                roughnesses[i] = eta
-            except Exception:
-                continue
+                    residuals[i] = rho
+                    roughnesses[i] = eta
+
+                    # 恢复
+                    self._mao_x, self._mao_y_corrected, self._mao_M, self._mao_h = old_x, old_y, old_M, old_h
+                except Exception:
+                    continue
+        else:
+            from scipy.interpolate import UnivariateSpline
+            k = 3 if algo_type == "spline" else 5
+
+            for i, sigma_mm_val in enumerate(sigmas):
+                sigma_m = sigma_mm_val / 1000.0
+                s = n * (sigma_m ** 2)
+
+                try:
+                    spline = UnivariateSpline(x_fit, y_fit, k=k, s=s)
+
+                    # 残差：仅在原始数据点上计算
+                    y_pred = spline(x)
+                    rho = float(np.sum((y_m - y_pred) ** 2))
+
+                    # 粗糙度：∫f''(x)²dx，在原始数据域上数值积分
+                    spline_d2 = spline.derivative(n=2)
+                    d2_vals = spline_d2(x_fine)
+                    eta = float(np.trapz(d2_vals ** 2, x_fine))
+
+                    residuals[i] = rho
+                    roughnesses[i] = eta
+                except Exception:
+                    continue
 
         # 过滤无效值
         valid = np.isfinite(residuals) & np.isfinite(roughnesses)

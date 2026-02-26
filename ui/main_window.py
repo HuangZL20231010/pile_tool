@@ -546,7 +546,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 print(f"[DEBUG] 样条参数: σ={sigma:.3f}mm, N={len(depths)}, s={s}")
                 # 更新 s 显示
                 self.fit_group.update_s_display(len(depths))
-            else:
+            elif algo_type == "spline5":
                 # 五次样条
                 sigma = self.fit_group.get_sigma_value()
                 self.solver.fit_data(depths, disps, algo_type="spline5", sigma_mm=sigma,
@@ -556,6 +556,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 s = len(depths) * (sigma_m ** 2)
                 print(f"[DEBUG] 样条参数: σ={sigma:.3f}mm, N={len(depths)}, s={s}")
                 # 更新 s 显示
+                self.fit_group.update_s_display(len(depths))
+            elif algo_type == "mao_spline":
+                # 论文样条
+                delta = self.fit_group.get_sigma_value()
+                self.solver.fit_data(depths, disps, algo_type="mao_spline",
+                                     sigma_mm=delta, boundary_conditions=bc)
+                print(f"[DEBUG] 论文样条参数: δ={delta:.3f}mm, N={len(depths)}")
                 self.fit_group.update_s_display(len(depths))
             depth_dense, disp_fit_mm, moment, shear, pressure = self.solver.get_results_arrays()
             print(f"[DEBUG] 拟合完成: algo={algo_type}")
@@ -649,7 +656,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
             # 检查数据量（五次样条需要至少6个点）
             algo_type = self.fit_group.get_algo_type()
-            min_points = 7 if algo_type == "spline5" else 5
+            if algo_type == "spline5":
+                min_points = 7
+            elif algo_type == "mao_spline":
+                min_points = 4
+            else:
+                min_points = 5
             if len(depths) < min_points:
                 QtWidgets.QMessageBox.warning(
                     self, "提示",
@@ -699,21 +711,42 @@ class MainWindow(QtWidgets.QMainWindow):
             s_percent = s_value * 100
 
             # 构建详细的计算过程说明
-            algo_name = "三次样条" if algo_type == "spline" else "五次样条"
-            k_value = 3 if algo_type == "spline" else 5
+            if algo_type == "spline":
+                algo_name = "三次样条"
+                k_value = 3
+            elif algo_type == "spline5":
+                algo_name = "五次样条"
+                k_value = 5
+            else:
+                algo_name = "论文样条"
+                k_value = 3
 
-            process_msg = (
-                f"════════ L-curve 法 ════════\n\n"
-                f"【算法】{algo_name} (k={k_value})\n"
-                f"【数据】N = {len(depths)} 个测点\n"
-                f"【搜索】{n_candidates} 个候选 σ（0.001~{max_sigma:.1f}mm）\n"
-                f"【计算】共进行 {n_candidates} 次样条拟合\n\n"
-                f"══════════ 计算结果 ══════════\n\n"
-                f"【最优 σ】{optimal_sigma:.4f} mm\n"
-                f"【平滑因子】s = N × σ² = {s_percent:.6f}%\n\n"
-                f"══════════════════════════════\n"
-                f"点击「开始计算」查看拟合结果"
-            )
+            if algo_type == "mao_spline":
+                process_msg = (
+                    f"════════ L-curve 法 ════════\n\n"
+                    f"【算法】{algo_name}\n"
+                    f"【数据】N = {len(depths)} 个测点\n"
+                    f"【搜索】{n_candidates} 个候选 δ（0.001~{max_sigma:.1f}mm）\n"
+                    f"【计算】共进行 {n_candidates} 次样条拟合\n\n"
+                    f"══════════ 计算结果 ══════════\n\n"
+                    f"【最优 δ】{optimal_sigma:.4f} mm\n"
+                    f"【约束】|yᵢ-ŷᵢ| ≤ δ (逐点)\n\n"
+                    f"══════════════════════════════\n"
+                    f"点击「开始计算」查看拟合结果"
+                )
+            else:
+                process_msg = (
+                    f"════════ L-curve 法 ════════\n\n"
+                    f"【算法】{algo_name} (k={k_value})\n"
+                    f"【数据】N = {len(depths)} 个测点\n"
+                    f"【搜索】{n_candidates} 个候选 σ（0.001~{max_sigma:.1f}mm）\n"
+                    f"【计算】共进行 {n_candidates} 次样条拟合\n\n"
+                    f"══════════ 计算结果 ══════════\n\n"
+                    f"【最优 σ】{optimal_sigma:.4f} mm\n"
+                    f"【平滑因子】s = N × σ² = {s_percent:.6f}%\n\n"
+                    f"══════════════════════════════\n"
+                    f"点击「开始计算」查看拟合结果"
+                )
 
             QtWidgets.QMessageBox.information(
                 self, "自动选择完成", process_msg
@@ -735,7 +768,7 @@ class MainWindow(QtWidgets.QMainWindow):
         - 点数 > 60：最大值 8mm
         """
         # 仅在样条模式下生效
-        if self.fit_group.get_algo_type() not in ('spline', 'spline5'):
+        if self.fit_group.get_algo_type() not in ('spline', 'spline5', 'mao_spline'):
             return
 
         raw_text = self.data_group.text_edit.toPlainText()
@@ -755,6 +788,6 @@ class MainWindow(QtWidgets.QMainWindow):
         Args:
             algo_type (str): 新的算法类型，'polynomial'、'spline' 或 'spline5'
         """
-        if algo_type in ('spline', 'spline5'):
+        if algo_type in ('spline', 'spline5', 'mao_spline'):
             self.on_data_changed()
 
