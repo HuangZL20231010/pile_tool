@@ -85,6 +85,9 @@ class PileSolver:
         self._mao_y_corrected: np.ndarray | None = None
         self._mao_M: np.ndarray | None = None
         self._mao_h: np.ndarray | None = None
+        # Bs 迭代刚度（矩形截面钢筋混凝土短期刚度）
+        self.use_bs: bool = False
+        self._bs_params: dict | None = None
 
     def _apply_odd_symmetric_mirror(self, x: np.ndarray, y_m: np.ndarray,
                                      bc: dict, n_mirror: int = 5) -> Tuple[np.ndarray, np.ndarray]:
@@ -315,7 +318,8 @@ class PileSolver:
 
         return result
 
-    def set_parameters(self, E_val: float, E_unit: str, section_type: str, dims: dict):
+    def set_parameters(self, E_val: float, E_unit: str, section_type: str, dims: dict,
+                       bs_params: dict | None = None):
         """
         设置材料和截面参数
 
@@ -328,6 +332,11 @@ class PileSolver:
             dims (dict): 截面尺寸参数
                 - 圆形: {'D': 直径值}，单位为毫米
                 - 矩形: {'b': 宽度, 'h': 高度}，单位为毫米
+            bs_params (dict | None): Bs 迭代参数（仅矩形截面），包含：
+                - h0: 有效高度 (mm)
+                - Ec: 混凝土弹性模量 (MPa)
+                - As: 钢筋面积 (mm²)
+                - ftk: 混凝土抗拉强度标准值 (MPa)
 
         Note:
             内部会自动转换为标准单位：E 转为 kPa，尺寸转为米
@@ -336,6 +345,125 @@ class PileSolver:
         self.E_kpa = utils.convert_E_to_kpa(E_val, E_unit)
         # 计算截面惯性矩，自动处理单位转换
         self.I_m4 = utils.compute_inertia(section_type, dims)
+
+        # Bs 迭代刚度设置（两种截面钢筋混凝土）
+        if bs_params is not None:
+            self.use_bs = True
+            Es_MPa = 200000.0  # 钢筋弹性模量 (MPa)
+            Ec_MPa = bs_params['Ec']
+            As_mm2 = bs_params['As']
+            h0_mm = bs_params['h0']
+            ftk_MPa = bs_params['ftk']
+
+            if section_type == "circle":
+                # 圆形截面：使用等效矩形参数
+                b_mm = bs_params['b_eq']
+                h_mm = bs_params['h_eq']
+            else:
+                b_mm = dims['b']
+                h_mm = dims['h']
+
+            # 转换为 kPa / m 单位制
+            Es_kPa = Es_MPa * 1000.0
+            Ec_kPa = Ec_MPa * 1000.0
+            ftk_kPa = ftk_MPa * 1000.0
+            As_m2 = As_mm2 / 1e6
+            h0_m = h0_mm / 1000.0
+            b_m = b_mm / 1000.0
+            h_m = h_mm / 1000.0
+
+            # 预计算常量
+            alpha_E = Es_kPa / Ec_kPa  # αE = Es/Ec
+            rho = As_m2 / (b_m * h0_m)  # ρ = As/(b·h0)
+            # αE·ρ/ζ = 0.2 + 6·αE·ρ （矩形截面 γf'=0）
+            alpha_E_rho_over_zeta = 0.2 + 6.0 * alpha_E * rho
+            # η = 1 - 0.4·√(αE·ρ)  (内力臂系数)
+            eta = 1.0 - 0.4 * np.sqrt(alpha_E * rho)
+            # Ate = 0.5·b·h, ρte = As/Ate (≥0.01)
+            Ate = 0.5 * b_m * h_m
+            rho_te = max(As_m2 / Ate, 0.01)
+            # Bs0 = Ec · I_rect （初始刚度）
+            Bs0 = Ec_kPa * self.I_m4
+
+            self._bs_params = {
+                'Es_kPa': Es_kPa,
+                'As_m2': As_m2,
+                'h0_m': h0_m,
+                'ftk_kPa': ftk_kPa,
+                'alpha_E_rho_over_zeta': alpha_E_rho_over_zeta,
+                'eta': eta,
+                'rho_te': rho_te,
+                'Bs0': Bs0,
+            }
+        else:
+            self.use_bs = False
+            self._bs_params = None
+
+    def _compute_bs_single(self, curvature: float) -> tuple[float, float]:
+        """
+        对单个曲率值迭代求 Bs 和弯矩 M
+
+        使用短期刚度公式 Bs = Es·As·h0² / (ψ/η + αE·ρ/ζ) 逐步迭代，
+        直到 Bs 收敛。
+
+        Args:
+            curvature: 曲率 φ (1/m)
+
+        Returns:
+            (Bs, M): Bs 刚度 (kN·m²) 和弯矩 M (kN·m)
+        """
+        p = self._bs_params
+        phi = abs(curvature)
+        sign = 1.0 if curvature >= 0 else -1.0
+
+        # 曲率接近零时直接返回
+        if phi < 1e-15:
+            return p['Bs0'], 0.0
+
+        Es_kPa = p['Es_kPa']
+        As_m2 = p['As_m2']
+        h0_m = p['h0_m']
+        ftk_kPa = p['ftk_kPa']
+        aErho_zeta = p['alpha_E_rho_over_zeta']
+        eta = p['eta']
+        rho_te = p['rho_te']
+        Bs = p['Bs0']
+
+        for _ in range(50):
+            M_abs = Bs * phi
+            # σss = M / (0.87·h0·As)，单位 kPa
+            sigma_ss = M_abs / (0.87 * h0_m * As_m2)
+            if sigma_ss < 1e-15:
+                break
+            # ψ = 1.1 - 0.65·ftk/(ρte·σss), clamp [0.2, 1.0]
+            psi = 1.1 - 0.65 * ftk_kPa / (rho_te * sigma_ss)
+            psi = max(0.2, min(1.0, psi))
+            # Bs_new = Es·As·h0² / (ψ/η + αE·ρ/ζ)
+            Bs_new = Es_kPa * As_m2 * h0_m ** 2 / (psi / eta + aErho_zeta)
+            # 收敛判断
+            if abs(Bs_new - Bs) / max(Bs, 1e-30) < 1e-6:
+                Bs = Bs_new
+                break
+            Bs = Bs_new
+
+        M = sign * Bs * phi
+        return Bs, M
+
+    def _compute_bs_moment(self, curvature_array: np.ndarray) -> np.ndarray:
+        """
+        对曲率数组逐点迭代计算弯矩
+
+        Args:
+            curvature_array: 曲率数组 (1/m)
+
+        Returns:
+            弯矩数组 (kN·m)
+        """
+        moment = np.empty_like(curvature_array)
+        for i, phi in enumerate(curvature_array):
+            _, m = self._compute_bs_single(float(phi))
+            moment[i] = m
+        return moment
 
     def fit_data(self, x_depths, y_disps_mm, degree: int = 5,
                  algo_type: str = "polynomial", sigma_mm: float = 0.5,
@@ -624,12 +752,20 @@ class PileSolver:
             # 三次样条四阶导数为0
             fourth_deriv = np.zeros_like(x_dense)
 
-        # 计算弯矩：M = E * I * y'' (kN·m)
-        moment = self.E_kpa * self.I_m4 * curvature
-        # 计算剪力：Q = E * I * y''' (kN)
-        shear = self.E_kpa * self.I_m4 * third_deriv
-        # 计算土压力：p = E * I * y'''' (kPa)
-        pressure = self.E_kpa * self.I_m4 * fourth_deriv
+        # 计算弯矩、剪力、土压力
+        if self.use_bs:
+            # Bs 迭代模式：逐点迭代求弯矩，数值微分求剪力和土压力
+            moment = self._compute_bs_moment(curvature)
+            shear = np.gradient(moment, x_dense)       # Q = dM/dx
+            pressure = np.gradient(shear, x_dense)     # p = dQ/dx
+        else:
+            # 常数 EI 模式
+            # 计算弯矩：M = E * I * y'' (kN·m)
+            moment = self.E_kpa * self.I_m4 * curvature
+            # 计算剪力：Q = E * I * y''' (kN)
+            shear = self.E_kpa * self.I_m4 * third_deriv
+            # 计算土压力：p = E * I * y'''' (kPa)
+            pressure = self.E_kpa * self.I_m4 * fourth_deriv
 
         # 将位移转换回毫米单位，用于显示
         y_fit_mm = y_fit_m * 1000.0
@@ -699,12 +835,31 @@ class PileSolver:
             # 三次样条四阶导数为0
             fourth_deriv = 0.0
 
-        # 计算指定深度的弯矩（kN·m）：M = E * I * y''
-        moment = float(self.E_kpa * self.I_m4 * curvature)
-        # 计算剪力：Q = E * I * y'''（kN）
-        shear = float(self.E_kpa * self.I_m4 * third_deriv)
-        # 计算土压力：p = E * I * y''''（kPa）
-        pressure = float(self.E_kpa * self.I_m4 * fourth_deriv)
+        # 计算弯矩、剪力、土压力
+        if self.use_bs:
+            # Bs 迭代模式
+            _, moment = self._compute_bs_single(curvature)
+            moment = float(moment)
+            # 用中心差分求 Q 和 p：在查询点附近取 3 点曲率，迭代得 M
+            dx = 0.001  # 微小步长 (m)
+            x_pts = np.array([x_query - dx, x_query, x_query + dx])
+            if self.algo_type == "polynomial":
+                curv_pts = np.array([float(self.poly_second(xp)) for xp in x_pts])
+            elif self.algo_type in ("spline", "spline5"):
+                curv_pts = np.array([float(self.spline.derivative(2)(xp)) for xp in x_pts])
+            elif self.algo_type == "mao_spline":
+                curv_pts = self._eval_mao_spline(x_pts, deriv=2)
+            m_pts = np.array([self._compute_bs_single(float(c))[1] for c in curv_pts])
+            shear = float((m_pts[2] - m_pts[0]) / (2 * dx))
+            pressure = float((m_pts[2] - 2 * m_pts[1] + m_pts[0]) / (dx ** 2))
+        else:
+            # 常数 EI 模式
+            # 计算指定深度的弯矩（kN·m）：M = E * I * y''
+            moment = float(self.E_kpa * self.I_m4 * curvature)
+            # 计算剪力：Q = E * I * y'''（kN）
+            shear = float(self.E_kpa * self.I_m4 * third_deriv)
+            # 计算土压力：p = E * I * y''''（kPa）
+            pressure = float(self.E_kpa * self.I_m4 * fourth_deriv)
 
         # 返回查询结果，位移转换为毫米
         return QueryResult(
@@ -780,11 +935,16 @@ class PileSolver:
             else:
                 if self.spline is None:
                     return ""
+            if self.use_bs:
+                return "M(x) = Bs(x)·y''(x) (逐点迭代)"
             return "M(x) = E·I·y''(x) (分段函数)"
 
         # 多项式模式
         if self.poly_second is None or self.E_kpa is None or self.I_m4 is None:
             return ""
+
+        if self.use_bs:
+            return "M(x) = Bs(x)·y''(x) (逐点迭代)"
 
         # 获取二阶导数的系数（y''的多项式系数）
         second_deriv_coeffs = self.poly_second.coefficients

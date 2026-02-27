@@ -445,11 +445,25 @@ class MainWindow(QtWidgets.QMainWindow):
         return depths, disps
 
     def _set_default_params(self):
-        """为默认数据写入参数：E=30000 MPa，圆形 D=800mm。"""
-        self.params_group.E_input.setText("30000")
-        self.params_group.E_unit.setCurrentText("MPa")
-        self.params_group.circle_radio.setChecked(True)
-        self.params_group.D_input.setText("800")
+        """
+        为默认数据写入参数，根据当前截面类型自动填充。
+
+        圆形：D=800mm, cover=50mm, Ec=31500MPa, As=3275mm², ftk=2.20MPa
+        矩形：b=1000mm, h=800mm, h0=660mm, Ec=31500MPa, As=3275mm², ftk=2.20MPa
+        """
+        if self.params_group.rect_radio.isChecked():
+            self.params_group.b_input.setText("1000")
+            self.params_group.h_input.setText("800")
+            self.params_group.h0_input.setText("660")
+            self.params_group.Ec_input.setText("31500")
+            self.params_group.As_input.setText("3275")
+            self.params_group.ftk_input.setText("2.20")
+        else:
+            self.params_group.D_input.setText("800")
+            self.params_group.cover_input.setText("50")
+            self.params_group.Ec_input.setText("31500")
+            self.params_group.As_input.setText("3275")
+            self.params_group.ftk_input.setText("2.20")
 
     def _fill_default_data_to_textbox(self, depths, disps):
         """
@@ -517,22 +531,39 @@ class MainWindow(QtWidgets.QMainWindow):
                 raise ValueError("请输入至少两行有效的深度/位移数据")
 
             # ===== 步骤2: 读取参数设置 =====
-            E_val = float(self.params_group.E_input.text())
-            E_unit = self.params_group.E_unit.currentText()
             section_type = self.params_group.section_type()
-            dims = self._read_section_dims(section_type)
             algo_type = self.fit_group.get_algo_type()
             param_value = self.fit_group.slider.value()
             # 获取边界条件
             bc = self.data_group.get_boundary_conditions()
-            print(f"[DEBUG] 参数: E={E_val}{E_unit}, section={section_type}, dims={dims}, algo={algo_type}, param={param_value}")
+
+            # 统一检测空值并自动填充
+            if section_type == "circle":
+                check_inputs = [self.params_group.D_input, self.params_group.cover_input,
+                                self.params_group.Ec_input, self.params_group.As_input,
+                                self.params_group.ftk_input]
+            else:
+                check_inputs = [self.params_group.b_input, self.params_group.h_input,
+                                self.params_group.h0_input, self.params_group.Ec_input,
+                                self.params_group.As_input, self.params_group.ftk_input]
+            if any(not inp.text().strip() for inp in check_inputs):
+                self._set_default_params()
+                print(f"[DEBUG] {section_type}参数为空，自动填充默认值")
+
+            # 统一走 Bs 流程
+            dims = self._read_section_dims(section_type)
+            bs_params = self.params_group.get_bs_params()
+            E_val = bs_params['Ec']
+            E_unit = "MPa"
+            self.solver.set_parameters(E_val, E_unit, section_type, dims,
+                                       bs_params=bs_params)
+            print(f"[DEBUG] 参数: Ec={E_val}MPa, section={section_type}, dims={dims}, bs_params={bs_params}, algo={algo_type}, param={param_value}")
             if bc['top_enabled'] or bc['bottom_enabled']:
                 print(f"[DEBUG] 边界条件: top={bc['top_enabled']}({bc['top_depth']}m,{bc['top_disp']}mm), bottom={bc['bottom_enabled']}({bc['bottom_depth']}m,{bc['bottom_disp']}mm)")
 
             # ===== 步骤3: 执行计算 =====
             # 连接 solver 到绘图画布，用于交互式十字线跟踪
             self.plot_canvas.set_solver(self.solver)
-            self.solver.set_parameters(E_val, E_unit, section_type, dims)
             # 根据算法类型选择参数
             if algo_type == "polynomial":
                 self.solver.fit_data(depths, disps, degree=param_value, algo_type="polynomial")
