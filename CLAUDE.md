@@ -39,14 +39,26 @@ pile_tool/
 ├── CLAUDE.md            # 本文件
 ├── core/                # 核心计算模块
 │   ├── __init__.py
-│   ├── calculator.py    # PileSolver 类 - 拟合与力学计算
+│   ├── calculator.py    # PileSolver 类 - 主拟合与力学计算
+│   ├── mao_spline.py    # 论文光顺样条算法（毛朝辉2006）
+│   ├── bs_stiffness.py  # Bs 迭代刚度计算
+│   ├── optimization.py  # L-curve 法自动参数选择
 │   ├── utils.py         # 工具函数（单位转换、数据解析）
 │   └── file_importer.py # CSV/Excel 文件导入
 └── ui/                  # 用户界面模块
     ├── __init__.py
     ├── main_window.py   # MainWindow 主窗口
-    ├── components.py    # UI 组件（输入框、滑块、按钮等）
-    └── plotting.py      # Matplotlib 绑图画布
+    ├── components.py    # UI 组件 re-export hub
+    ├── theme.py         # 主题样式（调色板 + 样式表）
+    ├── plotting.py      # Matplotlib 绑图画布
+    └── widgets/         # 各 UI 组件实现
+        ├── __init__.py
+        ├── data_input.py   # DataInputGroup 数据输入
+        ├── params_group.py # ParamsGroup 材料与截面参数
+        ├── fit_control.py  # FitControlGroup 拟合控制
+        ├── query_group.py  # QueryGroup 任意深度查询
+        ├── stats_bar.py    # StatsBar 统计信息栏
+        └── welcome.py      # WelcomePlaceholder 欢迎页
 ```
 
 ## 核心架构
