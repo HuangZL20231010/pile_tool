@@ -237,7 +237,9 @@ class FitControlGroup(QtWidgets.QGroupBox):
         if self.poly_radio.isChecked():
             return
 
-        if n_points > 60:
+        if self.mao_radio.isChecked():
+            max_mm = round(n_points * 0.155, 1)
+        elif n_points > 60:
             max_mm = 8.0
         elif n_points > 40:
             max_mm = 4.0

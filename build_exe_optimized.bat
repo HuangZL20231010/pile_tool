@@ -23,9 +23,18 @@ REM ============================================
 echo [1/5] Cleaning old build files...
 if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
-if exist main.spec del main.spec
+if exist main.spec del /q main.spec
 
-echo [2/5] Building optimized executable...
+echo [2/5] Checking disk free space...
+for /f %%A in ('powershell -NoProfile -Command "$f=[int64](Get-PSDrive -Name C).Free; [math]::Floor($f/1GB)"') do set freeGB=%%A
+echo Free space on C: !freeGB! GB
+if !freeGB! LSS 5 (
+    echo ERROR: C drive free space is too low for packaging. At least 5 GB is recommended.
+    echo Please clean disk space and retry.
+    exit /b 1
+)
+
+echo [3/5] Building optimized executable...
 pyinstaller --clean --noconsole --onefile ^
     --name "PileBackAnalysis" ^
     --hidden-import=PyQt6.QtCore ^
@@ -42,6 +51,11 @@ pyinstaller --clean --noconsole --onefile ^
     --exclude-module pandas.tests ^
     --exclude-module matplotlib.tests ^
     main.py
+
+if errorlevel 1 (
+    echo ERROR: PyInstaller failed. Build aborted.
+    exit /b 1
+)
 
 REM ============================================
 REM 排除模块说明：
@@ -63,7 +77,7 @@ REM   scipy 几乎所有子模块都被 interpolate 间接依赖
 REM   包括: spatial, special, linalg, fft, constants, optimize 等
 REM ============================================
 
-echo [3/5] Checking build result...
+echo [4/5] Checking build result...
 if exist "dist\PileBackAnalysis.exe" (
     echo SUCCESS: Build completed!
     echo.
@@ -74,16 +88,22 @@ if exist "dist\PileBackAnalysis.exe" (
     exit /b 1
 )
 
-echo [4/5] Calculating file size...
+echo [5/5] Calculating file size...
 for %%F in ("dist\PileBackAnalysis.exe") do (
     set size=%%~zF
     set /a sizeMB=!size! / 1048576
     echo File size: !sizeMB! MB
 )
 
-echo [5/5] Cleaning temporary files...
+if !size! LSS 20000000 (
+    echo ERROR: Executable size is abnormal ^(!sizeMB! MB^). It may be corrupted.
+    echo Please ensure enough disk space and rebuild.
+    exit /b 1
+)
+
+echo [6/6] Cleaning temporary files...
 rmdir /s /q build
-del main.spec
+if exist main.spec del /q main.spec
 
 echo.
 echo ============================================

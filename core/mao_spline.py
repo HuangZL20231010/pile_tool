@@ -110,6 +110,10 @@ def solve_mao_spline(x: np.ndarray, y_m: np.ndarray,
     for idx in locked_indices:
         rho[idx] = 0.0
 
+    # ρ 上限：防止 |D_i| 极小时 ρ 爆炸导致矩阵奇异
+    h_min = np.min(h)
+    rho_max = 1.0 / (h_min * delta_m + 1e-30)
+
     m = N - 2  # 内部未知量个数 (M_1,...,M_{N-2})
     max_iter = 100
 
@@ -150,8 +154,19 @@ def solve_mao_spline(x: np.ndarray, y_m: np.ndarray,
                 i_prev2 = r - 1
                 ab[4, r - 2] = rho[i_prev2 + 1] / (h[i_prev2] * h[i_prev2 + 1])
 
-        # 求解 M 内部节点
-        M_inner = solve_banded((2, 2), ab, g)
+        # 求解 M 内部节点；若矩阵奇异则添加正则化重试
+        try:
+            M_inner = solve_banded((2, 2), ab, g)
+        except np.linalg.LinAlgError:
+            reg = max(1e-10, 1e-8 * np.max(np.abs(ab[2, :])))
+            ab[2, :] += reg
+            try:
+                M_inner = solve_banded((2, 2), ab, g)
+            except np.linalg.LinAlgError:
+                raise ValueError(
+                    f"论文样条求解失败：δ={delta_m*1000:.3f}mm 导致矩阵奇异，"
+                    "请尝试略微调大或调小误差限"
+                )
 
         # 完整 M 向量（自然样条边界 M_0 = M_{N-1} = 0）
         M_full = np.zeros(N)
@@ -174,8 +189,8 @@ def solve_mao_spline(x: np.ndarray, y_m: np.ndarray,
                 rho[i] = 0.0
                 continue
             abs_Di = abs(D[i])
-            if abs_Di != 0:
-                rho[i] = delta_m / abs_Di
+            if abs_Di > 1e-15:
+                rho[i] = min(delta_m / abs_Di, rho_max)
             else:
                 rho[i] = 0.0
 
