@@ -55,9 +55,9 @@ class ParamsGroup(QtWidgets.QGroupBox):
         self.h_input = QtWidgets.QLineEdit()
         self.h_input.setPlaceholderText("高度")
 
-        self.h0_label = QtWidgets.QLabel("h0 (mm)")
-        self.h0_input = QtWidgets.QLineEdit()
-        self.h0_input.setPlaceholderText("有效高度")
+        self.rect_cover_label = QtWidgets.QLabel("cover (mm)")
+        self.rect_cover_input = QtWidgets.QLineEdit()
+        self.rect_cover_input.setPlaceholderText("保护层厚度")
 
         # 共用 Bs 迭代参数输入框
         self.Ec_label = QtWidgets.QLabel("Ec (MPa)")
@@ -88,13 +88,13 @@ class ParamsGroup(QtWidgets.QGroupBox):
         top.addWidget(self.cover_label, 2, 0)
         top.addWidget(self.cover_input, 2, 1)
 
-        # 行3-5：矩形专用（b, h, h0）
+        # 行3-5：矩形专用（b, h, cover）
         top.addWidget(self.b_label, 3, 0)
         top.addWidget(self.b_input, 3, 1)
         top.addWidget(self.h_label, 4, 0)
         top.addWidget(self.h_input, 4, 1)
-        top.addWidget(self.h0_label, 5, 0)
-        top.addWidget(self.h0_input, 5, 1)
+        top.addWidget(self.rect_cover_label, 5, 0)
+        top.addWidget(self.rect_cover_input, 5, 1)
 
         # 行6-8：共用 Bs 参数（Ec, As, ftk）
         top.addWidget(self.Ec_label, 6, 0)
@@ -132,13 +132,13 @@ class ParamsGroup(QtWidgets.QGroupBox):
         self.D_input.setVisible(circle)
         self.cover_label.setVisible(circle)
         self.cover_input.setVisible(circle)
-        # 矩形专用：b, h, h0
+        # 矩形专用：b, h, cover
         self.b_label.setVisible(not circle)
         self.b_input.setVisible(not circle)
         self.h_label.setVisible(not circle)
         self.h_input.setVisible(not circle)
-        self.h0_label.setVisible(not circle)
-        self.h0_input.setVisible(not circle)
+        self.rect_cover_label.setVisible(not circle)
+        self.rect_cover_input.setVisible(not circle)
 
     def get_bs_params(self) -> dict:
         """
@@ -166,8 +166,10 @@ class ParamsGroup(QtWidgets.QGroupBox):
                 'b_eq': b_eq,
                 'h_eq': h_eq,
             }
+        h = float(self.h_input.text() or 0)
+        cover = float(self.rect_cover_input.text() or 0)
         return {
-            'h0': float(self.h0_input.text() or 0),
+            'h0': h - cover,
             'Ec': float(self.Ec_input.text() or 0),
             'As': float(self.As_input.text() or 0),
             'ftk': float(self.ftk_input.text() or 0),

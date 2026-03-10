@@ -210,12 +210,12 @@ class MainWindow(QtWidgets.QMainWindow):
         为默认数据写入参数，根据当前截面类型自动填充。
 
         圆形：D=800mm, cover=50mm, Ec=31500MPa, As=3275mm², ftk=2.20MPa
-        矩形：b=1000mm, h=800mm, h0=660mm, Ec=31500MPa, As=3275mm², ftk=2.20MPa
+        矩形：b=1000mm, h=800mm, cover=140mm, Ec=31500MPa, As=3275mm², ftk=2.20MPa
         """
         if self.params_group.rect_radio.isChecked():
             self.params_group.b_input.setText("1000")
             self.params_group.h_input.setText("800")
-            self.params_group.h0_input.setText("660")
+            self.params_group.rect_cover_input.setText("140")
             self.params_group.Ec_input.setText("31500")
             self.params_group.As_input.setText("3275")
             self.params_group.ftk_input.setText("2.20")
@@ -305,7 +305,7 @@ class MainWindow(QtWidgets.QMainWindow):
                                 self.params_group.ftk_input]
             else:
                 check_inputs = [self.params_group.b_input, self.params_group.h_input,
-                                self.params_group.h0_input, self.params_group.Ec_input,
+                                self.params_group.rect_cover_input, self.params_group.Ec_input,
                                 self.params_group.As_input, self.params_group.ftk_input]
             if any(not inp.text().strip() for inp in check_inputs):
                 self._set_default_params()
