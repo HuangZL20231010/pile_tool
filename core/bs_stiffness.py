@@ -95,7 +95,7 @@ def compute_bs_single(curvature: float, bs_params: dict) -> tuple[float, float]:
     rho_te = p['rho_te']
     Bs = p['Bs0']
 
-    for _ in range(50):
+    for _ in range(200):
         M_abs = Bs * phi
         # σss = M / (0.87·h0·As)，单位 kPa
         sigma_ss = M_abs / (0.87 * h0_m * As_m2)
@@ -110,7 +110,8 @@ def compute_bs_single(curvature: float, bs_params: dict) -> tuple[float, float]:
         if abs(Bs_new - Bs) / max(Bs, 1e-30) < 1e-6:
             Bs = Bs_new
             break
-        Bs = Bs_new
+        # 松弛迭代：取新旧值平均，阻尼振荡防止不收敛
+        Bs = 0.5 * Bs + 0.5 * Bs_new
 
     M = sign * Bs * phi
     return Bs, M
