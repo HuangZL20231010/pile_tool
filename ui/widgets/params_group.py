@@ -83,7 +83,7 @@ class ParamsGroup(QtWidgets.QGroupBox):
         top = QtWidgets.QGridLayout()
 
         # 行0：短期刚度迭代复选框
-        top.addWidget(self.bs_checkbox, 0, 0, 1, 2)
+        # top.addWidget(self.bs_checkbox, 0, 0, 1, 2)
 
         # 行1：截面类型选择
         top.addWidget(self.circle_radio, 1, 0)
