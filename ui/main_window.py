@@ -299,26 +299,40 @@ class MainWindow(QtWidgets.QMainWindow):
             bc = self.data_group.get_boundary_conditions()
 
             # 统一检测空值并自动填充
-            if section_type == "circle":
-                check_inputs = [self.params_group.D_input, self.params_group.cover_input,
-                                self.params_group.Ec_input, self.params_group.As_input,
-                                self.params_group.ftk_input]
+            bs_enabled = self.params_group.is_bs_enabled()
+            if bs_enabled:
+                if section_type == "circle":
+                    check_inputs = [self.params_group.D_input, self.params_group.cover_input,
+                                    self.params_group.Ec_input, self.params_group.As_input,
+                                    self.params_group.ftk_input]
+                else:
+                    check_inputs = [self.params_group.b_input, self.params_group.h_input,
+                                    self.params_group.rect_cover_input, self.params_group.Ec_input,
+                                    self.params_group.As_input, self.params_group.ftk_input]
             else:
-                check_inputs = [self.params_group.b_input, self.params_group.h_input,
-                                self.params_group.rect_cover_input, self.params_group.Ec_input,
-                                self.params_group.As_input, self.params_group.ftk_input]
+                if section_type == "circle":
+                    check_inputs = [self.params_group.D_input, self.params_group.Ec_input]
+                else:
+                    check_inputs = [self.params_group.b_input, self.params_group.h_input,
+                                    self.params_group.Ec_input]
             if any(not inp.text().strip() for inp in check_inputs):
                 self._set_default_params()
                 print(f"[DEBUG] {section_type}参数为空，自动填充默认值")
 
-            # 统一走 Bs 流程
+            # 根据短期刚度迭代复选框决定是否走 Bs 流程
             dims = self._read_section_dims(section_type)
-            bs_params = self.params_group.get_bs_params()
-            E_val = bs_params['Ec']
-            E_unit = "MPa"
-            self.solver.set_parameters(E_val, E_unit, section_type, dims,
-                                       bs_params=bs_params)
-            print(f"[DEBUG] 参数: Ec={E_val}MPa, section={section_type}, dims={dims}, bs_params={bs_params}, algo={algo_type}, param={param_value}")
+            if bs_enabled:
+                bs_params = self.params_group.get_bs_params()
+                E_val = bs_params['Ec']
+                E_unit = "MPa"
+                self.solver.set_parameters(E_val, E_unit, section_type, dims,
+                                           bs_params=bs_params)
+            else:
+                E_val = float(self.params_group.Ec_input.text() or 0)
+                E_unit = "MPa"
+                self.solver.set_parameters(E_val, E_unit, section_type, dims,
+                                           bs_params=None)
+            print(f"[DEBUG] 参数: Ec={E_val}MPa, section={section_type}, dims={dims}, bs_enabled={bs_enabled}, algo={algo_type}, param={param_value}")
             if bc['top_enabled'] or bc['bottom_enabled']:
                 print(f"[DEBUG] 边界条件: top={bc['top_enabled']}({bc['top_depth']}m,{bc['top_disp']}mm), bottom={bc['bottom_enabled']}({bc['bottom_depth']}m,{bc['bottom_disp']}mm)")
 
@@ -350,11 +364,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 # 更新 s 显示
                 self.fit_group.update_s_display(len(depths))
             elif algo_type == "mao_spline":
-                # 论文样条
+                # 光顺样条
                 delta = self.fit_group.get_sigma_value()
                 self.solver.fit_data(depths, disps, algo_type="mao_spline",
                                      sigma_mm=delta, boundary_conditions=bc)
-                print(f"[DEBUG] 论文样条参数: δ={delta:.3f}mm, N={len(depths)}")
+                print(f"[DEBUG] 光顺样条参数: δ={delta:.3f}mm, N={len(depths)}")
                 self.fit_group.update_s_display(len(depths))
             depth_dense, disp_fit_mm, moment, shear, pressure = self.solver.get_results_arrays()
             print(f"[DEBUG] 拟合完成: algo={algo_type}")
@@ -362,11 +376,9 @@ class MainWindow(QtWidgets.QMainWindow):
             # ===== 步骤4: 计算统计信息 =====
             import numpy as np
             mmax = float(np.max(np.abs(moment))) if len(moment) else 0.0
-            qmax = float(np.max(np.abs(shear))) if len(shear) else 0.0
-            pmax = float(np.max(np.abs(pressure))) if len(pressure) else 0.0
             r2 = self.solver.fitting_stats.get("R2", 0.0)
             rmse_mm = self.solver.fitting_stats.get("RMSE_mm", 0.0)
-            print(f"[DEBUG] 统计: R2={r2:.4f}, RMSE={rmse_mm:.4f}mm, Mmax={mmax:.3f}kN·m, Qmax={qmax:.3f}kN, pmax={pmax:.3f}kPa\n")
+            print(f"[DEBUG] 统计: R2={r2:.4f}, RMSE={rmse_mm:.4f}mm, Mmax={mmax:.3f}kN·m\n")
 
             # ===== 步骤5: 更新界面 =====
             # 获取多项式表达式
@@ -375,7 +387,7 @@ class MainWindow(QtWidgets.QMainWindow):
             moment_expr = self.solver.get_moment_expression()
             # 更新图表和统计信息
             self.plot_canvas.plot(depths, disps, depth_dense, disp_fit_mm, moment, shear, pressure)
-            self.stats_bar.update_stats(r2, rmse_mm, mmax, qmax, pmax, poly_expr, moment_expr, algo_type)
+            self.stats_bar.update_stats(r2, rmse_mm, mmax, poly_expr, moment_expr, algo_type)
 
             # 切换到结果页面
             self.right_stack.setCurrentIndex(1)
@@ -414,9 +426,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 f"深度 {x_val:.3f} m\n"           # 深度值
                 f"位移: {result.y_mm:.3f} mm\n"   # 位移值
                 f"曲率: {result.curvature:.6f} 1/m\n"  # 曲率值
-                f"弯矩: {result.moment:.3f} kN·m\n"    # 弯矩值
-                f"剪力: {result.shear:.3f} kN\n"       # 剪力值
-                f"土压力: {result.pressure:.3f} kPa"   # 土压力值
+                f"弯矩: {result.moment:.3f} kN·m"     # 弯矩值
             )
 
             # 显示信息对话框
@@ -510,7 +520,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 algo_name = "五次样条"
                 k_value = 5
             else:
-                algo_name = "论文样条"
+                algo_name = "光顺样条"
                 k_value = 3
 
             if algo_type == "mao_spline":

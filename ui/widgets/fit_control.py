@@ -1,8 +1,8 @@
 """
 拟合控制组件
 
-提供论文样条算法选择、参数调节滑块和计算按钮。
-滑块语义固定为论文样条的误差限 δ。
+提供光顺样条算法选择、参数调节滑块和计算按钮。
+滑块语义固定为光顺样条的误差限 δ。
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ class FitControlGroup(QtWidgets.QGroupBox):
         super().__init__("拟合控制", parent)
 
         # ===== 算法选择 Radio Buttons =====
-        self.mao_radio = QtWidgets.QRadioButton("论文样条")
+        self.mao_radio = QtWidgets.QRadioButton("光顺样条")
         self.mao_radio.setChecked(True)
 
         # 创建按钮组确保单选行为

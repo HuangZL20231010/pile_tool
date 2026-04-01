@@ -55,17 +55,9 @@ class StatsBar(QtWidgets.QWidget):
         self.mmax_label = QtWidgets.QLabel("Mmax = -")
         self.mmax_label.setStyleSheet("font-size: 16px; font-weight: 600; color: #0f172a;")
 
-        self.qmax_label = QtWidgets.QLabel("Qmax = -")
-        self.qmax_label.setStyleSheet("font-size: 16px; font-weight: 600; color: #0f172a;")
-
-        self.pmax_label = QtWidgets.QLabel("pmax = -")
-        self.pmax_label.setStyleSheet("font-size: 16px; font-weight: 600; color: #0f172a;")
-
         extreme_layout = QtWidgets.QHBoxLayout()
         extreme_layout.setSpacing(24)
         extreme_layout.addWidget(self.mmax_label)
-        extreme_layout.addWidget(self.qmax_label)
-        extreme_layout.addWidget(self.pmax_label)
         extreme_layout.addStretch()
 
         extreme_card = QtWidgets.QVBoxLayout()
@@ -147,8 +139,6 @@ class StatsBar(QtWidgets.QWidget):
         r2: float,
         rmse_mm: float,
         mmax: float,
-        qmax: float = 0.0,
-        pmax: float = 0.0,
         poly_expr: str = "",
         moment_expr: str = "",
         algo_type: str = "polynomial",
@@ -160,8 +150,6 @@ class StatsBar(QtWidgets.QWidget):
             r2 (float): 决定系数R²
             rmse_mm (float): 均方根误差（毫米）
             mmax (float): 最大弯矩值（kN·m）
-            qmax (float): 最大剪力值（kN）
-            pmax (float): 最大土压力值（kPa）
             poly_expr (str): 位移拟合函数表达式
             moment_expr (str): 弯矩函数表达式
             algo_type (str): 算法类型
@@ -169,19 +157,13 @@ class StatsBar(QtWidgets.QWidget):
         self.r2_label.setText(f"R² = {r2:.4f}")
         self.rmse_label.setText(f"RMSE = {rmse_mm:.2f} mm")
         self.mmax_label.setText(f"Mmax = {mmax:.2f} kN·m")
-        self.qmax_label.setText(f"Qmax = {qmax:.2f} kN")
-
-        if algo_type in ("spline", "mao_spline"):
-            self.pmax_label.setText("pmax = N/A")
-        else:
-            self.pmax_label.setText(f"pmax = {pmax:.2f} kPa")
 
         if algo_type == "spline":
             self.disp_title.setText("位移拟合函数 y(x) - 三次样条")
         elif algo_type == "spline5":
             self.disp_title.setText("位移拟合函数 y(x) - 五次样条")
         elif algo_type == "mao_spline":
-            self.disp_title.setText("位移拟合函数 y(x) - 论文样条")
+            self.disp_title.setText("位移拟合函数 y(x) - 光顺样条")
         else:
             self.disp_title.setText("位移拟合函数 y(x)")
 

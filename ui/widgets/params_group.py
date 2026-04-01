@@ -28,6 +28,10 @@ class ParamsGroup(QtWidgets.QGroupBox):
         """
         super().__init__("材料与截面参数", parent)
 
+        # 短期刚度迭代复选框
+        self.bs_checkbox = QtWidgets.QCheckBox("短期刚度迭代")
+        self.bs_checkbox.setChecked(True)
+
         # 截面类型单选按钮
         self.circle_radio = QtWidgets.QRadioButton("圆形")
         self.rect_radio = QtWidgets.QRadioButton("矩形")
@@ -78,34 +82,37 @@ class ParamsGroup(QtWidgets.QGroupBox):
         # 使用网格布局排列控件
         top = QtWidgets.QGridLayout()
 
-        # 行0：截面类型选择
-        top.addWidget(self.circle_radio, 0, 0)
-        top.addWidget(self.rect_radio, 0, 1)
+        # 行0：短期刚度迭代复选框
+        top.addWidget(self.bs_checkbox, 0, 0, 1, 2)
 
-        # 行1-2：圆形专用（D, cover）
-        top.addWidget(self.D_label, 1, 0)
-        top.addWidget(self.D_input, 1, 1)
-        top.addWidget(self.cover_label, 2, 0)
-        top.addWidget(self.cover_input, 2, 1)
+        # 行1：截面类型选择
+        top.addWidget(self.circle_radio, 1, 0)
+        top.addWidget(self.rect_radio, 1, 1)
 
-        # 行3-5：矩形专用（b, h, cover）
-        top.addWidget(self.b_label, 3, 0)
-        top.addWidget(self.b_input, 3, 1)
-        top.addWidget(self.h_label, 4, 0)
-        top.addWidget(self.h_input, 4, 1)
-        top.addWidget(self.rect_cover_label, 5, 0)
-        top.addWidget(self.rect_cover_input, 5, 1)
+        # 行2-3：圆形专用（D, cover）
+        top.addWidget(self.D_label, 2, 0)
+        top.addWidget(self.D_input, 2, 1)
+        top.addWidget(self.cover_label, 3, 0)
+        top.addWidget(self.cover_input, 3, 1)
 
-        # 行6-8：共用 Bs 参数（Ec, As, ftk）
-        top.addWidget(self.Ec_label, 6, 0)
-        top.addWidget(self.Ec_input, 6, 1)
-        top.addWidget(self.As_label, 7, 0)
-        top.addWidget(self.As_input, 7, 1)
-        top.addWidget(self.ftk_label, 8, 0)
-        top.addWidget(self.ftk_input, 8, 1)
+        # 行4-6：矩形专用（b, h, cover）
+        top.addWidget(self.b_label, 4, 0)
+        top.addWidget(self.b_input, 4, 1)
+        top.addWidget(self.h_label, 5, 0)
+        top.addWidget(self.h_input, 5, 1)
+        top.addWidget(self.rect_cover_label, 6, 0)
+        top.addWidget(self.rect_cover_input, 6, 1)
 
-        # 行9：Es 标签
-        top.addWidget(self.Es_label, 9, 0, 1, 2)
+        # 行7-9：共用 Bs 参数（Ec, As, ftk）
+        top.addWidget(self.Ec_label, 7, 0)
+        top.addWidget(self.Ec_input, 7, 1)
+        top.addWidget(self.As_label, 8, 0)
+        top.addWidget(self.As_input, 8, 1)
+        top.addWidget(self.ftk_label, 9, 0)
+        top.addWidget(self.ftk_input, 9, 1)
+
+        # 行10：Es 标签
+        top.addWidget(self.Es_label, 10, 0, 1, 2)
 
         top.setColumnStretch(1, 1)
         self.setLayout(top)
@@ -113,6 +120,8 @@ class ParamsGroup(QtWidgets.QGroupBox):
         # 根据截面类型动态显示尺寸输入
         self.circle_radio.toggled.connect(self.update_section_inputs)
         self.rect_radio.toggled.connect(self.update_section_inputs)
+        # 短期刚度迭代复选框联动
+        self.bs_checkbox.toggled.connect(self.update_bs_visibility)
         self.update_section_inputs()
 
     def section_type(self) -> str:
@@ -123,6 +132,10 @@ class ParamsGroup(QtWidgets.QGroupBox):
             str: "circle" 表示圆形，"rect" 表示矩形
         """
         return "circle" if self.circle_radio.isChecked() else "rect"
+
+    def is_bs_enabled(self) -> bool:
+        """返回短期刚度迭代复选框是否选中。"""
+        return self.bs_checkbox.isChecked()
 
     def update_section_inputs(self):
         """根据截面类型显示/隐藏对应输入框。"""
@@ -139,6 +152,24 @@ class ParamsGroup(QtWidgets.QGroupBox):
         self.h_input.setVisible(not circle)
         self.rect_cover_label.setVisible(not circle)
         self.rect_cover_input.setVisible(not circle)
+        # 联动更新 Bs 字段可见性
+        self.update_bs_visibility()
+
+    def update_bs_visibility(self):
+        """根据短期刚度迭代复选框状态显示/隐藏 Bs 相关字段。"""
+        bs_on = self.bs_checkbox.isChecked()
+        circle = self.circle_radio.isChecked()
+        # cover 字段：仅在 Bs 开启时显示
+        self.cover_label.setVisible(bs_on and circle)
+        self.cover_input.setVisible(bs_on and circle)
+        self.rect_cover_label.setVisible(bs_on and not circle)
+        self.rect_cover_input.setVisible(bs_on and not circle)
+        # As、ftk、Es 标签：仅在 Bs 开启时显示
+        self.As_label.setVisible(bs_on)
+        self.As_input.setVisible(bs_on)
+        self.ftk_label.setVisible(bs_on)
+        self.ftk_input.setVisible(bs_on)
+        self.Es_label.setVisible(bs_on)
 
     def get_bs_params(self) -> dict:
         """

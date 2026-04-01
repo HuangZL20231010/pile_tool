@@ -542,7 +542,7 @@ class PileSolver:
         if self.algo_type == "mao_spline":
             if self._mao_x is None:
                 return ""
-            return "论文光顺样条 (分段函数)"
+            return "光顺样条 (分段函数)"
 
         if self.poly_coeffs is None:
             return ""
